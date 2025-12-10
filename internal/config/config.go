@@ -20,12 +20,17 @@ type OrderBookConfig struct {
 }
 
 type DatabaseConfig struct {
-	Type     string // "mysql" или "postgres"
-	User     string
-	Password string
-	Host     string
-	Port     int
-	Name     string
+	Type          string // "mysql" или "postgres"
+	User          string
+	Password      string
+	Host          string
+	Port          int
+	Name          string
+	UseTLS        bool   // Use TLS/SSL for connection
+	CACert        string // Path to CA certificate
+	ClientCert    string // Path to client certificate
+	ClientKey     string // Path to client key
+	TLSSkipVerify bool   // Skip certificate verification (insecure, for IP addresses)
 }
 
 type ServerConfig struct {
@@ -58,6 +63,11 @@ func Load(path string) (*Config, error) {
 	c.Database.Host = cfg.Section("database").Key("host").String()
 	c.Database.Port = cfg.Section("database").Key("port").MustInt(3306)
 	c.Database.Name = cfg.Section("database").Key("name").String()
+	c.Database.UseTLS = cfg.Section("database").Key("use_tls").MustBool(false)
+	c.Database.CACert = cfg.Section("database").Key("ca_cert").String()
+	c.Database.ClientCert = cfg.Section("database").Key("client_cert").String()
+	c.Database.ClientKey = cfg.Section("database").Key("client_key").String()
+	c.Database.TLSSkipVerify = cfg.Section("database").Key("tls_skip_verify").MustBool(false)
 
 	// Server
 	c.Server.Port = cfg.Section("server").Key("port").MustInt(8080)
