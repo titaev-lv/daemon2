@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"ctdaemon/internal/config"
+	"ctdaemon/internal/db"
 	"ctdaemon/internal/logger"
 )
 
@@ -29,7 +30,12 @@ func main() {
 	log := logger.Get("main")
 	log.Info("Starting ctdaemon", "config", *configFile)
 
-	_ = cfg
+	// 3. Init Database
+	if err := db.Init(cfg.Database); err != nil {
+		log.Error("Failed to init database", "error", err)
+		os.Exit(1)
+	}
+	defer db.Close()
 
 	// jsonData, _ := json.MarshalIndent(cfg, "", "  ")
 	// fmt.Println(string(jsonData))
