@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"ctdaemon/internal/config"
+	"ctdaemon/internal/logger"
 )
 
 func main() {
@@ -19,8 +20,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 2. Init Logger
+	if err := logger.Init(cfg.Log.Level, cfg.Log.Dir, cfg.Log.MaxFileSizeMB); err != nil {
+		fmt.Printf("Failed to init logger: %+v\n", err)
+		os.Exit(1)
+	}
+	defer logger.Close()
+	log := logger.Get("main")
+	log.Info("Starting ctdaemon", "config", *configFile)
+
 	_ = cfg
 
 	// jsonData, _ := json.MarshalIndent(cfg, "", "  ")
 	// fmt.Println(string(jsonData))
+	os.Exit(0)
 }
