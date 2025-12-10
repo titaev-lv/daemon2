@@ -1,0 +1,4 @@
+cmd/daemon/ctdaemon
+logs
+conf/ssl
+conf/config.ini
