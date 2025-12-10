@@ -34,8 +34,9 @@ type ServerConfig struct {
 }
 
 type LogConfig struct {
-	Level string
-	Dir   string
+	Level         string
+	Dir           string
+	MaxFileSizeMB int
 }
 
 type TradeConfig struct {
@@ -65,6 +66,7 @@ func Load(path string) (*Config, error) {
 	// Log
 	c.Log.Level = cfg.Section("log").Key("level").MustString("info")
 	c.Log.Dir = cfg.Section("log").Key("dir").MustString("./logs")
+	c.Log.MaxFileSizeMB = cfg.Section("log").Key("max_file_size_mb").MustInt(10)
 
 	// Trade
 	c.Trade.UpdateInterval = cfg.Section("trade").Key("update_interval").MustInt(5)
