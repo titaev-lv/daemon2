@@ -1,8 +1,8 @@
 package db
 
 import (
-	"daemon2/internal/config"
-	"daemon2/internal/logger"
+	"ctdaemon/internal/config"
+	"ctdaemon/internal/logger"
 	"fmt"
 
 	_ "github.com/go-sql-driver/mysql"
