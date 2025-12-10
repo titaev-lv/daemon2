@@ -20,17 +20,19 @@ type OrderBookConfig struct {
 }
 
 type DatabaseConfig struct {
-	Type          string // "mysql" или "postgres"
-	User          string
-	Password      string
-	Host          string
-	Port          int
-	Name          string
-	UseTLS        bool   // Use TLS/SSL for connection
-	CACert        string // Path to CA certificate
-	ClientCert    string // Path to client certificate
-	ClientKey     string // Path to client key
-	TLSSkipVerify bool   // Skip certificate verification (insecure, for IP addresses)
+	Type              string // "mysql" или "postgres"
+	User              string
+	Password          string
+	Host              string
+	Port              int
+	Name              string
+	UseTLS            bool   // Use TLS/SSL for connection
+	CACert            string // Path to CA certificate
+	ClientCert        string // Path to client certificate
+	ClientKey         string // Path to client key
+	TLSSkipVerify     bool   // Skip certificate verification (insecure, for IP addresses)
+	ConnectTimeoutSec int    // Connection timeout in seconds
+	MaxRetries        int    // Maximum number of connection attempts
 }
 
 type ServerConfig struct {
@@ -68,6 +70,8 @@ func Load(path string) (*Config, error) {
 	c.Database.ClientCert = cfg.Section("database").Key("client_cert").String()
 	c.Database.ClientKey = cfg.Section("database").Key("client_key").String()
 	c.Database.TLSSkipVerify = cfg.Section("database").Key("tls_skip_verify").MustBool(false)
+	c.Database.ConnectTimeoutSec = cfg.Section("database").Key("connect_timeout_sec").MustInt(10)
+	c.Database.MaxRetries = cfg.Section("database").Key("max_retries").MustInt(0)
 
 	// Server
 	c.Server.Port = cfg.Section("server").Key("port").MustInt(8080)

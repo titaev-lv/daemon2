@@ -6,27 +6,35 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"time"
 
 	"ctdaemon/internal/logger"
+
 	"github.com/go-sql-driver/mysql"
 )
 
 type MySQLDriver struct {
-	DB            *sql.DB
-	Host          string
-	Port          int
-	User          string
-	Pass          string
-	Database      string
-	UseTLS        bool
-	CACert        string
-	ClientCert    string
-	ClientKey     string
-	TLSSkipVerify bool
+	DB             *sql.DB
+	Host           string
+	Port           int
+	User           string
+	Pass           string
+	Database       string
+	UseTLS         bool
+	CACert         string
+	ClientCert     string
+	ClientKey      string
+	TLSSkipVerify  bool
+	ConnectTimeout time.Duration
 }
 
 func (m *MySQLDriver) Connect() error {
 	dsn := m.User + ":" + m.Pass + "@tcp(" + m.Host + ":" + itoa(m.Port) + ")/" + m.Database + "?parseTime=true"
+
+	// Add connection timeout if specified
+	if m.ConnectTimeout > 0 {
+		dsn += fmt.Sprintf("&timeout=%ds", int(m.ConnectTimeout.Seconds()))
+	}
 
 	// Configure TLS if enabled
 	if m.UseTLS {
