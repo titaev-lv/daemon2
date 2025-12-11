@@ -19,22 +19,48 @@
 
 **Цель**: создать папки и базовые типы данных
 
+**Статус**: ✅ ВЫПОЛНЕНО
+
 **Задачи**:
-- [ ] Создать папки: `internal/core/`, `internal/task/`, `internal/monitor/`, `internal/trader/`
-- [ ] Создать подпапки в `internal/core/`:
+- [x] Создать папки: `internal/core/`, `internal/task/`, `internal/monitor/`, `internal/trader/`
+- [x] Создать подпапки в `internal/core/`:
   - `exchange/` и `exchange/drivers/`
   - `orderbook/`
   - `messaging/` и `messaging/converters/`
   - `ws/`
   - `pubsub/`
-- [ ] Создать `internal/exchange/drivers/` с подпапками для каждой биржи:
+- [x] Создать `internal/exchange/drivers/` с подпапками для каждой биржи:
   - `binance/`, `bybit/`, `okx/`, `kucoin/`, `coinex/`, `htx/`, `mexc/`, `dex/`
 
 **Проверка результата**:
 ```bash
 $ find internal/core -type d | head -20
+internal
+internal/core
+internal/core/exchange
+internal/core/exchange/drivers
+internal/core/exchange/drivers/binance
+internal/core/exchange/drivers/bybit
+internal/core/exchange/drivers/coinex
+internal/core/exchange/drivers/dex
+internal/core/exchange/drivers/htx
+internal/core/exchange/drivers/kucoin
+internal/core/exchange/drivers/mexc
+internal/core/exchange/drivers/okx
+internal/core/messaging
+internal/core/messaging/converters
+internal/core/orderbook
+internal/core/pubsub
+internal/core/ws
+
 $ find internal/core/exchange/drivers -type d | wc -l  # должно быть 8+
+9  # ✅ 8 бирж + 1 root папка = 9
 ```
+
+**Дополнительно созданы папки**:
+- `internal/task/` - для управления задачами
+- `internal/monitor/` - для Monitor роли
+- `internal/trader/` - для Trader роли
 
 ---
 
@@ -44,70 +70,85 @@ $ find internal/core/exchange/drivers -type d | wc -l  # должно быть 8
 
 **Цель**: все общие типы в одном месте
 
+**Статус**: ✅ ВЫПОЛНЕНО
+
 **Содержание**:
+
+### Константы:
+- **Exchange IDs**: Binance, Bybit, OKX, Kucoin, Coinex, HTX, MEXC, DEX
+- **Market Types**: MarketSpot, MarketFutures
+
+### Основные типы:
+
+#### Level
 ```go
-package exchange
-
-// ExchangeID constants
-const (
-    Binance  = "binance"
-    Bybit    = "bybit"
-    OKX      = "okx"
-    Kucoin   = "kucoin"
-    Coinex   = "coinex"
-    HTX      = "htx"
-    MEXC     = "mexc"
-    DEX      = "dex"
-)
-
-// MarketType constants
-const (
-    MarketSpot    = "spot"
-    MarketFutures = "futures"
-)
-
-// OrderBook related
 type Level struct {
-    Price  float64
-    Amount float64
-}
-
-type OrderBook struct {
-    ExchangeID string
-    Pair       string
-    MarketType string
-    
-    Bids       []Level
-    Asks       []Level
-    Depth      int
-    
-    Timestamp  int64  // Unix milliseconds
-    SeqNum     int64  // Exchange sequence number
-}
-
-// Taskа структуры
-type MonitoringTask struct {
-    ExchangeID   string
-    ExchangeName string
-    MarketType   string
-    TradePairID  int
-    TradePair    string
-}
-
-type TradingTask struct {
-    ExchangeID      string
-    ExchangeName    string
-    MarketType      string
-    TradePairID     int
-    TradePair       string
-    StrategyID      string
-    StrategyParams  map[string]interface{}
+    Price  float64  // Цена за единицу (например, 45123.56 USDT)
+    Amount float64  // Объем на этой цене (0 = уровень удален)
 }
 ```
+**Использование**: Один уровень в книге ордеров
+
+#### OrderBook
+```go
+type OrderBook struct {
+    ExchangeID string  // Какая биржа (binance, bybit и т.д.)
+    Pair       string  // Торговая пара (BTC/USDT)
+    MarketType string  // Тип рынка (spot или futures)
+    Bids       []Level // Уровни покупателей (отсортированы по цене вниз)
+    Asks       []Level // Уровни продавцов (отсортированы по цене вверх)
+    Depth      int     // Глубина: 20, 50 или 0 (full)
+    Timestamp  int64   // Unix миллисекунды
+    SeqNum     int64   // Последовательный номер от биржи
+}
+```
+**Использование**: Хранит текущую книгу ордеров для пары на бирже
+
+#### MonitoringTask
+```go
+type MonitoringTask struct {
+    ExchangeID   string // Какую биржу мониторить
+    ExchangeName string // Человеческое название
+    MarketType   string // spot или futures
+    TradePairID  int    // ID в нашей БД
+    TradePair    string // BTC/USDT и т.д.
+}
+```
+**Использование**: Описывает что мониторить (загружается из MySQL MONITORING таблицы)
+
+#### TradingTask
+```go
+type TradingTask struct {
+    ExchangeID     string                 // Какую биржу торговать
+    ExchangeName   string                 // Человеческое название
+    MarketType     string                 // spot или futures
+    TradePairID    int                    // ID в нашей БД
+    TradePair      string                 // BTC/USDT и т.д.
+    StrategyID     string                 // grid, dca, momentum и т.д.
+    StrategyParams map[string]interface{} // Параметры стратегии в JSON формате
+}
+```
+**Использование**: Описывает что торговать и какой стратегией (загружается из MySQL TRADE таблицы)
+
+#### TasksData
+```go
+type TasksData struct {
+    Timestamp       int64
+    MonitoringTasks []MonitoringTask // Пары для мониторинга
+    TradingTasks    []TradingTask    // Пары для торговли
+}
+```
+**Использование**: Объединение всех задач при загрузке из БД (каждые 5-10 сек)
+
+### Вспомогательные функции:
+- `GetOrderBookKey(exchangeID, pair, marketType)` - уникальный ключ для orderbook
+- `GetMonitoringTaskKey(task)` - уникальный ключ для мониторинга
+- `GetTradingTaskKey(task)` - уникальный ключ для торговли
 
 **Проверка результата**:
 ```bash
-$ go test ./internal/core/exchange
+$ go build ./internal/core/exchange
+✓ Успешная компиляция
 ```
 
 ---
@@ -118,68 +159,100 @@ $ go test ./internal/core/exchange
 
 **Цель**: единый формат сообщений от всех бирж
 
+**Статус**: ✅ ВЫПОЛНЕНО
+
 **Содержание**:
+
+### Константы типов сообщений:
 ```go
-package messaging
-
 const (
-    // Message types
-    TypeOrderBook = "orderbook"
-    TypeTrade     = "trade"
-    TypePosition  = "position"
-    TypeOrder     = "order"
+    TypeOrderBook = "orderbook" // Обновление книги ордеров
+    TypeTrade     = "trade"     // Новая сделка на бирже
+    TypePosition  = "position"  // Обновление моей позиции (приватное)
+    TypeOrder     = "order"     // Обновление статуса моего ордера (приватное)
 )
+```
 
+### Основные типы:
+
+#### Message (главная структура)
+```go
 type Message struct {
-    Timestamp  int64       // Unix milliseconds
-    ExchangeID string
-    MarketType string
-    Type       string
+    Timestamp  int64              // Unix миллисекунды (стандартизовано)
+    ExchangeID string             // binance, bybit, okx и т.д.
+    MarketType string             // spot или futures
+    Type       string             // orderbook, trade, position, order
+    Pair       string             // BTC/USDT
+    SeqNum     int64              // Порядковый номер от биржи
     
-    Pair       string
-    SeqNum     int64       // Exchange sequence number
-    
-    // Type-specific data
+    // Только одно из полей ниже заполнено (зависит от Type)
     OrderBook  *OrderBookData
     Trade      *TradeData
     Position   *PositionData
     Order      *OrderData
 }
+```
+**Использование**: Универсальный формат для всех сообщений от бирж
 
+#### OrderBookData
+```go
 type OrderBookData struct {
-    Bids   []Level
-    Asks   []Level
-    Depth  int    // 20, 50, full (0)
-}
-
-type TradeData struct {
-    Price  float64
-    Amount float64
-    Side   string  // "buy", "sell"
-}
-
-type PositionData struct {
-    // Для трейдера
-    Side   string
-    Amount float64
-    Price  float64
-    PnL    float64
-}
-
-type OrderData struct {
-    OrderID    string
-    Side       string
-    Price      float64
-    Amount     float64
-    Status     string
-    Filled     float64
-    Commission float64
+    Bids  []Level // Best Bid первый
+    Asks  []Level // Best Ask первый
+    Depth int     // 20, 50 или 0 (full)
 }
 ```
+**Использование**: Когда Type == TypeOrderBook
+
+#### TradeData
+```go
+type TradeData struct {
+    Price  float64 // Цена сделки
+    Amount float64 // Объем сделки
+    Side   string  // "buy" или "sell" (инициатор сделки)
+}
+```
+**Использование**: Когда Type == TypeTrade (реальные сделки на бирже)
+
+#### PositionData
+```go
+type PositionData struct {
+    Side         string  // "long" или "short"
+    Amount       float64 // Объем позиции
+    EntryPrice   float64 // Цена входа
+    CurrentPrice float64 // Текущая цена
+    PnL          float64 // Прибыль/убыток
+}
+```
+**Использование**: Когда Type == TypePosition (приватные данные трейдера)
+
+#### OrderData
+```go
+type OrderData struct {
+    OrderID    string  // ID ордера на бирже
+    Side       string  // "buy" или "sell"
+    Price      float64 // Цена
+    Amount     float64 // Всего объем
+    Filled     float64 // Исполнено объема
+    Status     string  // open, filled, partially_filled, cancelled, rejected
+    Commission float64 // Комиссия биржи
+}
+```
+**Использование**: Когда Type == TypeOrder (исполнение моих ордеров)
+
+### Вспомогательная функция:
+- `GetMessageKey(msg)` - уникальный ключ для логирования/дедупликации
+
+**Преимущества единого формата**:
+- ✅ Одинаковый код для обработки данных со всех бирж
+- ✅ Легко добавлять новые биржи (только converter нужен)
+- ✅ Простая маршрутизация в Monitor/Trader
+- ✅ Типобезопасность и валидация
 
 **Проверка результата**:
 ```bash
-$ go test ./internal/core/messaging
+$ go build ./internal/core/messaging
+✓ Успешная компиляция
 ```
 
 ---

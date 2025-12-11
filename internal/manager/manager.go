@@ -1,3 +1,8 @@
+// Package manager содержит основную логику управления демоном
+// Manager отвечает за:
+// - Управление lifecycle приложения (старт, остановка, перезагрузка)
+// - Синхронизацию между компонентами (Monitor, Trader, TaskFetcher и т.д.)
+// - Обработку context для корректного завершения всех goroutine
 package manager
 
 import (
@@ -16,38 +21,57 @@ import (
 	//"daemon2/internal/tradedata"
 )
 
+// Ошибки для управления состоянием
 var (
+	// ErrAlreadyRunning - попытка запустить уже работающий менеджер
 	ErrAlreadyRunning = errors.New("system is already running")
-	ErrNotRunning     = errors.New("system is not running")
+	// ErrNotRunning - попытка остановить не работающий менеджер
+	ErrNotRunning = errors.New("system is not running")
 )
 
+// Manager - главный менеджер приложения
+// Координирует работу всех компонентов и управляет их жизненным циклом
 type Manager struct {
+	// cfg - конфигурация приложения (загружается один раз при старте)
 	cfg *config.Config
 	//	tradeData    *tradedata.Monitor
 	//	exchangeExec *exchange.Monitor
 	//	collector    *collectorevents.Monitor
 	//	trade        *trade.Monitor
-	ctx           context.Context
-	cancel        context.CancelFunc
-	wg            sync.WaitGroup
-	shutdownOnce  sync.Once
-	isRunning     bool
-	mu            sync.RWMutex
-	startTime     time.Time
-	shutdownTime  time.Time
+	// ctx/cancel - контекст для сигнализации о необходимости выключения всем goroutine
+	ctx    context.Context
+	cancel context.CancelFunc
+	// wg - WaitGroup для отслеживания всех запущенных goroutine
+	// Используется для корректного завершения при shutdown
+	wg sync.WaitGroup
+	// shutdownOnce - гарантирует что shutdown выполнится только один раз
+	shutdownOnce sync.Once
+	// isRunning - флаг текущего состояния (запущен или остановлен)
+	isRunning bool
+	// mu - мьютекс для защиты access к полям при многопоточности
+	mu sync.RWMutex
+	// startTime - время когда менеджер был запущен
+	startTime time.Time
+	// shutdownTime - время когда менеджер был остановлен
+	shutdownTime time.Time
+	// shutdownError - ошибка если произошла при shutdown
 	shutdownError error
 }
 
+// GracefulShutdownTimeout - максимальное время для корректного завершения всех goroutine
+// После этого они будут принудительно завершены
 const (
-	// GracefulShutdownTimeout is the maximum time to wait for graceful shutdown
 	GracefulShutdownTimeout = 30 * time.Second
 )
 
-// New creates a new manager
+// New - создает новый менеджер с указанной конфигурацией
+// Инициализирует контекст и состояние из сохраненного на диске
 func New(cfg *config.Config) *Manager {
+	// Создаем контекст который можно отменить (для shutdown)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Initialize state manager (loads from disk if exists)
+	// Инициализируем менеджер состояния (загружает из диска если файл существует)
+	// Инициализируем менеджер состояния (загружает из диска если файл существует)
 	stateMgr := state.GetInstance()
 	logger.Get("manager").Info("State manager initialized", "is_running", stateMgr.IsRunning())
 
@@ -68,7 +92,9 @@ func New(cfg *config.Config) *Manager {
 	}
 }
 
-// Start begins all system components
+// Start - запускает все компоненты системы
+// Возвращает ошибку если система уже работает
+// Устанавливает startTime и сохраняет состояние в файл
 func (m *Manager) Start() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -78,16 +104,18 @@ func (m *Manager) Start() error {
 		return ErrAlreadyRunning
 	}
 
+	// Логируем что начинаем запуск
 	logger.Get("manager").Info("Starting system components...")
 	m.isRunning = true
 	m.startTime = time.Now()
 
-	// Persist running state to disk
+	// Сохраняем состояние на диск (чтобы при перезагрузке демона он автоматически стартанул)
 	if err := state.GetInstance().SetRunning(true); err != nil {
 		logger.Get("manager").Error("Failed to persist running state", "error", err)
 	}
 
-	// Start components in order (dependency order)
+	// Запускаем компоненты в порядке зависимостей
+	// Сначала те которые не зависят от других, потом те которые зависят
 	// m.tradeData.Start()
 	// logger.Get("manager").Debug("Trade data monitor started")
 
@@ -104,7 +132,9 @@ func (m *Manager) Start() error {
 	return nil
 }
 
-// Stop gracefully stops all system components
+// Stop - корректно останавливает все компоненты системы
+// Возвращает ошибку если система не работает
+// Сохраняет состояние shutdown в файл
 func (m *Manager) Stop() error {
 	m.mu.RLock()
 	isRunning := m.isRunning
@@ -115,13 +145,19 @@ func (m *Manager) Stop() error {
 		return ErrNotRunning
 	}
 
+	// shutdownOnce гарантирует что shutdown выполнится только один раз
+	// даже если Stop() вызовут несколько раз одновременно
 	m.shutdownOnce.Do(func() {
 		m.doStop()
 	})
 	return m.shutdownError
 }
 
-// doStop performs the actual shutdown
+// doStop - выполняет фактическое завершение работы
+// Этап 1: помечает систему как остановленную
+// Этап 2: отправляет сигнал всем goroutine через cancel()
+// Этап 3: ждет их завершения с таймаутом
+// Этап 4: если не завершились - принудительно отменяет контекст
 func (m *Manager) doStop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -135,22 +171,23 @@ func (m *Manager) doStop() {
 	m.isRunning = false
 	m.shutdownTime = time.Now()
 
-	// Persist stopped state to disk
+	// Сохраняем на диск что система остановлена
 	if err := state.GetInstance().SetRunning(false); err != nil {
 		logger.Get("manager").Error("Failed to persist stopped state", "error", err)
 	}
 
-	// Create shutdown context with timeout
+	// Создаем контекст с таймаутом для graceful shutdown
+	// После истечения таймаута система будет принудительно выключена
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), GracefulShutdownTimeout)
 	defer cancel()
 
-	// Channel to track shutdown completion
+	// Канал для получения результата shutdown
 	done := make(chan error, 1)
 
-	// Run shutdown in goroutine to allow timeout
+	// Запускаем shutdown в отдельной goroutine чтобы иметь возможность таймаутировать
 	go m.shutdownComponents(done)
 
-	// Wait for shutdown or timeout
+	// Ждем либо завершения shutdown, либо истечения таймаута
 	select {
 	case err := <-done:
 		if err != nil {
@@ -160,9 +197,11 @@ func (m *Manager) doStop() {
 			logger.Get("manager").Info("Graceful shutdown completed successfully")
 		}
 	case <-shutdownCtx.Done():
+		// Таймаут истек - все компоненты не завершились вовремя
 		m.shutdownError = shutdownCtx.Err()
 		logger.Get("manager").Error("Shutdown timeout, force stopping", "error", m.shutdownError)
-		m.cancel() // Force cancel context
+		// Принудительно отменяем контекст чтобы все goroutine выключились
+		m.cancel()
 	}
 }
 
@@ -210,6 +249,7 @@ func (m *Manager) Status() map[string]interface{} {
 	seconds := totalSeconds % 60
 
 	var uptimeStr string
+	// Форматируем uptime в понятный вид (дни, часы, минуты, секунды)
 	if days > 0 {
 		uptimeStr = fmt.Sprintf("%dd %dh %dm %ds", days, hours, minutes, seconds)
 	} else if hours > 0 {
@@ -220,6 +260,7 @@ func (m *Manager) Status() map[string]interface{} {
 		uptimeStr = fmt.Sprintf("%ds", seconds)
 	}
 
+	// Возвращаем информацию о статусе в виде map для REST API
 	return map[string]interface{}{
 		"running": m.isRunning,
 		"uptime":  uptimeStr,
@@ -239,14 +280,16 @@ func (m *Manager) Status() map[string]interface{} {
 	}
 }
 
-// IsRunning returns whether the system is currently running
+// IsRunning - возвращает текущий статус (запущена ли система)
+// Потокобезопасный доступ с использованием RLock
 func (m *Manager) IsRunning() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.isRunning
 }
 
-// GetContext returns the manager's context for controlled cancellation
+// GetContext - возвращает контекст менеджера для управления отменой
+// Используется компонентами для получения сигнала о необходимости завершения
 func (m *Manager) GetContext() context.Context {
 	return m.ctx
 }
