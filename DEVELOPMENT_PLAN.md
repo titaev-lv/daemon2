@@ -308,71 +308,81 @@ $ go build ./cmd/daemon/
 
 ---
 
-## 1.5 Database Schema для MySQL
+## 1.5 Database Analysis & Task Mapping
 
-**Файл**: `internal/db/schema.sql`
+**Статус**: ✅ ВЫПОЛНЕНО (DATABASE ALREADY EXISTS)
 
-**Цель**: создать таблицы в MySQL
+**Файл**: `ct_system_new.sql` (уже в production)
 
-**Содержание**:
+**Цель**: Понять архитектуру БД и mapping на Go типы
+
+**Ключевые таблицы** (уже созданы):
+
+| Таблица | Назначение | Records |
+|---------|-----------|---------|
+| **ARBITRAGE_TRANS** | PRIMARY: транзакции арбитража (основная функция) | 79 |
+| **TRADE** | Конфигурация торговых стратегий | 8 |
+| **MONITORING** | Конфигурация мониторинга стаканов | 7 |
+| **TRADE_PAIR** | Каталог торговых пар (SPOT + FUTURES) | 1.3M+ |
+| **TRADE_PAIRS** | Junction: TRADE → TRADE_PAIR → EXCHANGE_ACCOUNTS | ? |
+| **MONITORING_TRADE_PAIRS** | Junction: MONITORING → TRADE_PAIR | ? |
+| **TRADE_HISTORY** | История выполнения ордеров (Phase 1.4 новая) | 0 |
+| **DAEMON_STATE** | Состояние демона (Phase 1.4 новая) | 0 |
+| **USER, EXCHANGE, COIN, CHAIN** | Справочники | 300+ |
+
+**Что уже присутствует в TRADE:**
 ```sql
--- Таблица MONITORING для мониторинга
-CREATE TABLE IF NOT EXISTS MONITORING (
-    ID INT PRIMARY KEY AUTO_INCREMENT,
-    EXCHANGE_ID VARCHAR(50) NOT NULL,
-    EXCHANGE_NAME VARCHAR(100),
-    MARKET_TYPE VARCHAR(20),
-    TRADE_PAIR_ID INT,
-    TRADE_PAIR VARCHAR(50) NOT NULL,
-    DAEMON_PRIORITY INT DEFAULT 0,
-    ENABLED BOOLEAN DEFAULT TRUE,
-    ORDERBOOK_DEPTH INT DEFAULT 20,
-    CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UPDATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    KEY (EXCHANGE_ID, MARKET_TYPE, ENABLED),
-    KEY (DAEMON_PRIORITY)
-);
-
--- Таблица TRADE для торговли
-CREATE TABLE IF NOT EXISTS TRADE (
-    ID INT PRIMARY KEY AUTO_INCREMENT,
-    EXCHANGE_ID VARCHAR(50) NOT NULL,
-    EXCHANGE_NAME VARCHAR(100),
-    MARKET_TYPE VARCHAR(20),
-    TRADE_PAIR_ID INT,
-    TRADE_PAIR VARCHAR(50) NOT NULL,
-    STRATEGY_ID VARCHAR(100),
-    STRATEGY_PARAMS JSON,
-    DAEMON_PRIORITY INT DEFAULT 0,
-    ENABLED BOOLEAN DEFAULT TRUE,
-    CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UPDATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    KEY (EXCHANGE_ID, MARKET_TYPE, ENABLED),
-    KEY (DAEMON_PRIORITY)
-);
-
--- Таблица истории торговли
-CREATE TABLE IF NOT EXISTS TRADE_HISTORY (
-    ID INT PRIMARY KEY AUTO_INCREMENT,
-    DAEMON_ID VARCHAR(100),
-    EXCHANGE_ID VARCHAR(50),
-    TRADE_PAIR VARCHAR(50),
-    ORDER_ID VARCHAR(100),
-    SIDE VARCHAR(10),
-    PRICE DECIMAL(20,8),
-    AMOUNT DECIMAL(20,8),
-    COMMISSION DECIMAL(20,8),
-    STATUS VARCHAR(50),
-    EXECUTED_AT TIMESTAMP,
-    CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    KEY (EXCHANGE_ID, TRADE_PAIR, EXECUTED_AT)
-);
+-- Все эти колонки УЖЕ ЕСТЬ в production БД:
+MAX_AMOUNT_TRADE DECIMAL(30,12)
+MAX_OPEN_ORDERS INT DEFAULT 10
+MAX_POSITION_SIZE DECIMAL(30,12)
+STRATEGY_UPDATE_INTERVAL_SEC INT DEFAULT 300
+SLIPPAGE_PERCENT DECIMAL(10,6) DEFAULT 0.1
+ENABLE_BACKTEST TINYINT(1) DEFAULT 0
+FIN_PROTECTION TINYINT(1) DEFAULT 0
+BBO_ONLY TINYINT(1) DEFAULT 1
 ```
+
+**Что уже присутствует в MONITORING:**
+```sql
+-- Все эти колонки УЖЕ ЕСТЬ в production БД:
+ORDERBOOK_DEPTH INT DEFAULT 50
+BATCH_SIZE INT DEFAULT 1000
+BATCH_INTERVAL_SEC INT DEFAULT 300
+RING_BUFFER_SIZE INT DEFAULT 10000
+SAVE_INTERVAL_SEC INT DEFAULT 600
+ACTIVE TINYINT(1) DEFAULT 1
+```
+
+**Что требует реализации**:
+1. **Task Fetcher** (`internal/task/fetcher.go`):
+   - Загружать MONITORING конфиги (7 записей)
+   - Загружать TRADE конфиги (8 записей)
+   - Преобразовать в MonitoringTask и TradingTask
+
+2. **Subscription Manager** (`internal/task/subscription_manager.go`):
+   - Сравнивать загруженные конфиги с текущими subscriptions
+   - Выполнять подписку/отписку пар через WS Pool
+
+3. **ARBITRAGE_TRANS Handler** (`internal/trader/arbitrage.go`):
+   - Монитор на новые ARBITRAGE_TRANS записи
+   - Преобразование в orders через Order Executor
+   - Обновление STATUS (New → In Progress → Complete/Error)
+
+4. **TRADE_HISTORY Logger** (`internal/trader/executor.go`):
+   - Логирование каждого ордера в TRADE_HISTORY
+   - Заполнение: EXECUTED_AT (microseconds), COMMISSION, STATUS
+
+5. **DAEMON_STATE Tracker** (`internal/manager/daemon_state.go`):
+   - Запись heartbeat каждые 5 сек (LAST_HEARTBEAT)
+   - Мониторинг для recovery логики
+   - Graceful shutdown: STATUS → STOPPING/STOPPED
 
 **Проверка результата**:
 ```bash
-$ mysql -u root -p ct_system < internal/db/schema.sql
-$ mysql -u root -p -e "DESC ct_system.MONITORING;"
+$ # В production уже есть 27 таблиц, проверяем только наши типы Go:
+$ go build ./internal/task
+$ go build ./internal/trader
 ```
 
 ---

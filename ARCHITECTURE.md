@@ -27,35 +27,35 @@
 │                    DAEMON INSTANCE                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │              CONFIGURATION LOADER                    │  │
-│  │  • Load role config (monitor/trader/both)           │  │
-│  │  • Load exchange endpoints                          │  │
-│  │  • Load monitoring/trading tasks from MySQL         │  │
-│  └──────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              CONFIGURATION LOADER                    │   │
+│  │  • Load role config (monitor/trader/both)            │   │
+│  │  • Load exchange endpoints                           │   │
+│  │  • Load monitoring/trading tasks from MySQL          │   │
+│  └──────────────────────────────────────────────────────┘   │
 │                         ↓                                   │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │        EXCHANGE CONNECTION POOL MANAGER             │  │
-│  │  • Create/manage WebSocket connections              │  │
-│  │  • Pool management (max 30-50 pairs per WS)        │  │
-│  │  • Ping/pong heartbeat                              │  │
-│  │  • Reconnection with exponential backoff            │  │
-│  │  • Unified message format conversion                │  │
-│  └──────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │        EXCHANGE CONNECTION POOL MANAGER              │   │
+│  │  • Create/manage WebSocket connections               │   │
+│  │  • Pool management (max 30-50 pairs per WS)          │   │
+│  │  • Ping/pong heartbeat                               │   │
+│  │  • Reconnection with exponential backoff             │   │
+│  │  • Unified message format conversion                 │   │
+│  └──────────────────────────────────────────────────────┘   │
 │         ↓                                    ↓              │
-│  ┌──────────────────────┐         ┌─────────────────────┐  │
-│  │  ORDER BOOK MANAGER  │         │  MESSAGE ROUTER     │  │
-│  │  • Ring buffers      │         │  • Format conv.     │  │
-│  │  • Data updates      │         │  • Dispatch to      │  │
-│  │  • Pub/sub system    │         │    subscribers      │  │
-│  └──────────────────────┘         └─────────────────────┘  │
+│  ┌──────────────────────┐         ┌─────────────────────┐   │
+│  │  ORDER BOOK MANAGER  │         │  MESSAGE ROUTER     │   │
+│  │  • Ring buffers      │         │  • Format conv.     │   │
+│  │  • Data updates      │         │  • Dispatch to      │   │
+│  │  • Pub/sub system    │         │    subscribers      │   │
+│  └──────────────────────┘         └─────────────────────┘   │
 │         ↑                                    ↑              │
-│  ┌──────────────────────┐         ┌─────────────────────┐  │
-│  │     MONITOR          │         │      TRADER         │  │
-│  │  • Sub to orderbook  │         │  • Sub to orderbook │  │
-│  │  • Buffer history    │         │  • Apply strategy   │  │
-│  │  • Batch to CH       │         │  • Execute orders   │  │
-│  └──────────────────────┘         └─────────────────────┘  │
+│  ┌──────────────────────┐         ┌─────────────────────┐   │
+│  │     MONITOR          │         │      TRADER         │   │
+│  │  • Sub to orderbook  │         │  • Sub to orderbook │   │
+│  │  • Buffer history    │         │  • Apply strategy   │   │
+│  │  • Batch to CH       │         │  • Execute orders   │   │
+│  └──────────────────────┘         └─────────────────────┘   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
          ↓                                              ↓
