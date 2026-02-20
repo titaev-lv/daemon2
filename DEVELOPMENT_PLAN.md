@@ -346,7 +346,7 @@ $ go build ./cmd/trader/
 
 **Статус**: ✅ ВЫПОЛНЕНО (task flow согласован с CTS-Core)
 
-да**Файл**: `services/cts-core/API_SPECIFICATION.md`
+**Файл**: `services/cts-core/API_SPECIFICATION.md`
 
 **Цель**: Зафиксировать mapping payload'ов задач CTS-Core на Go типы
 
@@ -1398,20 +1398,10 @@ $ go build ./cmd/trader/
 
 ## 7.2 API Updates
 
-**Файл**: `internal/api/server.go`
+**Статус**: ❌ Не применяется в актуальной архитектуре
 
-**Цель**: добавить endpoints для управления ролями
-
-**Endpoints**:
-- `GET /status` - статус демона
-- `POST /monitor/tasks` - загруженные задачи мониторинга
-- `POST /trader/orders` - открытые ордера
-- `GET /orderbook/:exchange/:pair` - текущий orderbook
-
-**Проверка результата**:
-```bash
-$ curl http://localhost:8080/status
-```
+Trader работает в **outbound-only** модели и не поднимает локальный HTTP API.
+Управление задачами и контроль состояния выполняются через WS/REST взаимодействие с CTS-Core.
 
 ---
 
@@ -1505,7 +1495,7 @@ $ ls *.md
 ## Функциональные требования
 - [ ] Поддержка 7 CEX (Binance, Bybit, OKX, Kucoin, Coinex, HTX, MEXC)
 - [ ] Поддержка Spot и Futures на каждой бирже
-- [ ] Работа на множественных демонах с одной БД
+- [ ] Работа на множественных trader-инстансах с оркестрацией через CTS-Core
 - [ ] Monitor собирает полную историю в ClickHouse
 - [ ] Trader торгует согласно стратегиям
 - [ ] Автоматическое восстановление соединений
@@ -1514,8 +1504,8 @@ $ ls *.md
 ## Non-Functional Requirements
 - [ ] Latency orderbook processing < 100ms
 - [ ] Throughput 1000-5000 msg/sec
-- [ ] Поддержка 300-500 пар на демон
-- [ ] Max 20 WS соединений на демон
+- [ ] Поддержка 300-500 пар на trader-инстанс
+- [ ] Max 20 WS соединений на trader-инстанс
 - [ ] Memory usage < 2GB
 - [ ] 99.9% uptime (по возможности)
 
