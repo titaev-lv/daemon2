@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -26,6 +27,7 @@ type correlationEntry struct {
 type Pool struct {
 	mu               sync.RWMutex
 	eventToRequestID map[string]correlationEntry
+	outReqLog        *slog.Logger
 	wsInLog          *slog.Logger
 	wsOutLog         *slog.Logger
 }
@@ -34,6 +36,7 @@ type Pool struct {
 func NewPool() *Pool {
 	pool := &Pool{
 		eventToRequestID: make(map[string]correlationEntry),
+		outReqLog:        logger.GetOutRequest("ws"),
 		wsInLog:          logger.GetWSIn("ws_in"),
 		wsOutLog:         logger.GetWSOut("ws_out"),
 	}
@@ -51,12 +54,18 @@ func (p *Pool) Subscribe(exchangeID, marketType string, pairs []string, depth in
 // SubscribeWithRequestID подписывает на пары и прокидывает request_id в ws_out
 // Возвращает event_id для корреляции входящих WS событий.
 func (p *Pool) SubscribeWithRequestID(exchangeID, marketType string, pairs []string, depth int, requestID string) (string, error) {
+	start := time.Now()
+	url := fmt.Sprintf("ws://%s/%s", exchangeID, marketType)
 	if len(pairs) == 0 {
-		return "", fmt.Errorf("pairs list is empty")
+		err := fmt.Errorf("pairs list is empty")
+		p.logOutRequest("WS_SUBSCRIBE", "/subscribe", url, 400, time.Since(start), requestID, err)
+		return "", err
 	}
 
 	eventID := newEventID("ws-sub")
 	p.rememberCorrelation(eventID, requestID)
+	latencyMS := float64(time.Since(start).Microseconds()) / 1000.0
+	latencyField := p.buildWSLatencyField(p.wsOutLog, latencyMS, nil)
 
 	p.wsOutLog.Info(
 		"ws subscribe",
@@ -66,7 +75,9 @@ func (p *Pool) SubscribeWithRequestID(exchangeID, marketType string, pairs []str
 		"market_type", marketType,
 		"pairs", strings.Join(pairs, ","),
 		"depth", depth,
+		"latency_ms", latencyField,
 	)
+	p.logOutRequest("WS_SUBSCRIBE", "/subscribe", url, 200, time.Since(start), requestID, nil)
 
 	return eventID, nil
 }
@@ -80,12 +91,18 @@ func (p *Pool) Unsubscribe(exchangeID, marketType string, pairs []string) error 
 // UnsubscribeWithRequestID отписывает пары и прокидывает request_id в ws_out
 // Возвращает event_id для корреляции входящих WS событий.
 func (p *Pool) UnsubscribeWithRequestID(exchangeID, marketType string, pairs []string, requestID string) (string, error) {
+	start := time.Now()
+	url := fmt.Sprintf("ws://%s/%s", exchangeID, marketType)
 	if len(pairs) == 0 {
-		return "", fmt.Errorf("pairs list is empty")
+		err := fmt.Errorf("pairs list is empty")
+		p.logOutRequest("WS_UNSUBSCRIBE", "/unsubscribe", url, 400, time.Since(start), requestID, err)
+		return "", err
 	}
 
 	eventID := newEventID("ws-unsub")
 	p.rememberCorrelation(eventID, requestID)
+	latencyMS := float64(time.Since(start).Microseconds()) / 1000.0
+	latencyField := p.buildWSLatencyField(p.wsOutLog, latencyMS, nil)
 
 	p.wsOutLog.Info(
 		"ws unsubscribe",
@@ -94,17 +111,59 @@ func (p *Pool) UnsubscribeWithRequestID(exchangeID, marketType string, pairs []s
 		"exchange_id", exchangeID,
 		"market_type", marketType,
 		"pairs", strings.Join(pairs, ","),
+		"latency_ms", latencyField,
 	)
+	p.logOutRequest("WS_UNSUBSCRIBE", "/unsubscribe", url, 200, time.Since(start), requestID, nil)
 
 	return eventID, nil
+}
+
+func (p *Pool) logOutRequest(method, path, url string, status int, latency time.Duration, requestID string, err error) {
+	if p.outReqLog == nil {
+		return
+	}
+
+	includeDetailedLatency := p.outReqLog.Enabled(context.Background(), slog.LevelDebug)
+	totalLatencyMS := float64(latency.Microseconds()) / 1000.0
+
+	latencyField := any(totalLatencyMS)
+	if includeDetailedLatency {
+		latencyField = map[string]float64{"total": totalLatencyMS}
+	}
+
+	fields := []any{
+		"method", method,
+		"path", path,
+		"url", url,
+		"status", status,
+		"latency_ms", latencyField,
+		"request_id", requestID,
+	}
+
+	if err != nil {
+		fields = append(fields, "error", err)
+		p.outReqLog.Warn("WS request", fields...)
+		return
+	}
+
+	p.outReqLog.Info("WS request", fields...)
 }
 
 // LogInboundMessage логирует входящее WS событие в ws_in.
 // Если request_id пустой, пытается восстановить его по event_id.
 func (p *Pool) LogInboundMessage(exchangeID, marketType, messageType, eventID, requestID string, payloadSize int, status string) {
+	inboundStart := time.Now()
+	latencyBreakdown := map[string]float64{}
 	if requestID == "" && eventID != "" {
-		requestID = p.requestIDByEvent(eventID)
+		correlatedRequestID, correlationLatencyMS, correlated := p.requestIDByEvent(eventID)
+		requestID = correlatedRequestID
+		if correlated {
+			latencyBreakdown["correlation"] = correlationLatencyMS
+		}
 	}
+
+	inboundLatencyMS := float64(time.Since(inboundStart).Microseconds()) / 1000.0
+	latencyField := p.buildWSLatencyField(p.wsInLog, inboundLatencyMS, latencyBreakdown)
 
 	p.wsInLog.Info(
 		"ws inbound",
@@ -115,6 +174,7 @@ func (p *Pool) LogInboundMessage(exchangeID, marketType, messageType, eventID, r
 		"message_type", messageType,
 		"payload_size", payloadSize,
 		"status", status,
+		"latency_ms", latencyField,
 	)
 }
 
@@ -130,23 +190,36 @@ func (p *Pool) rememberCorrelation(eventID, requestID string) {
 	p.mu.Unlock()
 }
 
-func (p *Pool) requestIDByEvent(eventID string) string {
+func (p *Pool) requestIDByEvent(eventID string) (string, float64, bool) {
 	p.mu.Lock()
 	entry, ok := p.eventToRequestID[eventID]
 	if !ok {
 		p.mu.Unlock()
-		return ""
+		return "", 0, false
 	}
 
 	if time.Since(entry.createdAt) > correlationTTL {
 		delete(p.eventToRequestID, eventID)
 		p.mu.Unlock()
-		return ""
+		return "", 0, false
 	}
 
+	latencyMS := float64(time.Since(entry.createdAt).Microseconds()) / 1000.0
 	delete(p.eventToRequestID, eventID)
 	p.mu.Unlock()
-	return entry.requestID
+	return entry.requestID, latencyMS, true
+}
+
+func (p *Pool) buildWSLatencyField(log *slog.Logger, totalMS float64, breakdown map[string]float64) any {
+	if log != nil && log.Enabled(context.Background(), slog.LevelDebug) {
+		payload := map[string]float64{"total": totalMS}
+		for key, value := range breakdown {
+			payload[key] = value
+		}
+		return payload
+	}
+
+	return totalMS
 }
 
 func (p *Pool) correlationCleanupLoop() {

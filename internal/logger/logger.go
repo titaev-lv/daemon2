@@ -60,6 +60,9 @@ func Init(levelStr, dir string, maxFileSizeMB int, maxBackups int, maxAgeDays in
 	}
 
 	errorLogPath := filepath.Join(filepath.Clean(dir), "error.log")
+	if err := ensureLogFileExists(errorLogPath); err != nil {
+		return err
+	}
 	errorLogFile := &lumberjack.Logger{
 		Filename:   errorLogPath,
 		MaxSize:    maxFileSizeMB,
@@ -70,6 +73,9 @@ func Init(levelStr, dir string, maxFileSizeMB int, maxBackups int, maxAgeDays in
 	logFiles["error"] = errorLogFile
 
 	outRequestLogPath := filepath.Join(filepath.Clean(dir), "out_request.log")
+	if err := ensureLogFileExists(outRequestLogPath); err != nil {
+		return err
+	}
 	outRequestLogFile := &lumberjack.Logger{
 		Filename:   outRequestLogPath,
 		MaxSize:    maxFileSizeMB,
@@ -80,6 +86,9 @@ func Init(levelStr, dir string, maxFileSizeMB int, maxBackups int, maxAgeDays in
 	logFiles["out_request"] = outRequestLogFile
 
 	wsInLogPath := filepath.Join(filepath.Clean(dir), "ws_in.log")
+	if err := ensureLogFileExists(wsInLogPath); err != nil {
+		return err
+	}
 	wsInLogFile := &lumberjack.Logger{
 		Filename:   wsInLogPath,
 		MaxSize:    maxFileSizeMB,
@@ -90,6 +99,9 @@ func Init(levelStr, dir string, maxFileSizeMB int, maxBackups int, maxAgeDays in
 	logFiles["ws_in"] = wsInLogFile
 
 	wsOutLogPath := filepath.Join(filepath.Clean(dir), "ws_out.log")
+	if err := ensureLogFileExists(wsOutLogPath); err != nil {
+		return err
+	}
 	wsOutLogFile := &lumberjack.Logger{
 		Filename:   wsOutLogPath,
 		MaxSize:    maxFileSizeMB,
@@ -100,6 +112,9 @@ func Init(levelStr, dir string, maxFileSizeMB int, maxBackups int, maxAgeDays in
 	logFiles["ws_out"] = wsOutLogFile
 
 	auditLogPath := filepath.Join(filepath.Clean(dir), "audit.log")
+	if err := ensureLogFileExists(auditLogPath); err != nil {
+		return err
+	}
 	auditLogFile := &lumberjack.Logger{
 		Filename:   auditLogPath,
 		MaxSize:    maxFileSizeMB,
@@ -311,5 +326,16 @@ func validateLogDir(dir string) error {
 		return fmt.Errorf("cleanup write test in %s: %w", dir, err)
 	}
 
+	return nil
+}
+
+func ensureLogFileExists(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0640)
+	if err != nil {
+		return fmt.Errorf("create log file %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close log file %s: %w", path, err)
+	}
 	return nil
 }
