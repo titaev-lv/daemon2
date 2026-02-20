@@ -332,7 +332,7 @@ $ go build ./internal/core/exchange
 $ go build ./internal/core/messaging  
 ✓ OK
 
-$ go build ./cmd/daemon/
+$ go build ./cmd/trader/
 ✓ OK (весь проект компилируется)
 ```
 

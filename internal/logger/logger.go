@@ -1,13 +1,6 @@
-// Package logger предоставляет единую систему логирования для всего приложения
-// Использует стандартный Go slog (structured logging) для удобного анализа логов
-// Поддерживает:
-// - Разные уровни логирования (debug, info, warn, error)
-// - Ротацию файлов по размеру с добавлением timestamp
-// - Разные логгеры для разных компонентов (main, db, trade, orderbook и т.д.)
 package logger
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,193 +9,43 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// Глобальные переменные для системы логирования
 var (
-	// Log - основной логгер для всего приложения
-	Log *slog.Logger
-	// Trade - специальный логгер для торговых операций (может писать в отдельный файл)
-	Trade *slog.Logger
-	// logLevel - текущий уровень логирования (debug, info, warn, error)
-	logLevel slog.Level
-	// logDir - папка где хранятся логи
-	logDir string
-	// logFiles - map логгеров по имени (для разных компонентов)
-	// Ключ: имя модуля (main, db, trade и т.д.)
-	// Значение: io.WriteCloser для записи логов
-	logFiles  map[string]io.WriteCloser
-	fileMutex sync.RWMutex
-	// maxLogSize - максимальный размер одного лог файла в байтах
-	// При достижении размера файл ротируется
-	maxLogSize int64
+	Log           *slog.Logger
+	OutRequestLog *slog.Logger
+	WSInLog       *slog.Logger
+	WSOutLog      *slog.Logger
+	AuditLog      *slog.Logger
+	Trade         *slog.Logger
+	logLevel      slog.Level
+	logDir        string
+	logFiles      map[string]io.WriteCloser
+	fileMutex     sync.RWMutex
 )
-
-// plainTextHandler - пользовательский handler для slog
-// Выводит логи в простом текстовом формате вместо JSON
-type plainTextHandler struct {
-	w      io.WriteCloser
-	level  slog.Level
-	module string
-}
-
-// rotatedFile - обертка вокруг файла с поддержкой ротации
-// Автоматически ротирует файл при достижении максимального размера
-type rotatedFile struct {
-	file      *os.File
-	filePath  string
-	fileSize  int64
-	maxSize   int64
-	fileMutex sync.Mutex
-}
-
-// Write - записывает данные в файл с проверкой на ротацию
-// Если размер файла + новые данные > maxSize, ротирует файл перед записью
-func (rf *rotatedFile) Write(p []byte) (int, error) {
-	rf.fileMutex.Lock()
-	defer rf.fileMutex.Unlock()
-
-	// Проверяем нужна ли ротация
-	if rf.fileSize+int64(len(p)) > rf.maxSize {
-		// Ротируем файл (переименовываем старый, создаем новый)
-		if err := rf.rotate(); err != nil {
-			// Если ротация не удалась, пытаемся все равно записать
-			n, _ := rf.file.Write(p)
-			rf.fileSize += int64(n)
-			return n, nil
-		}
-	}
-
-	// Записываем данные в файл
-	n, err := rf.file.Write(p)
-	rf.fileSize += int64(n)
-	return n, err
-}
-
-// rotate - выполняет ротацию файла логов
-// Переименовывает текущий файл в backup с timestamp и создает новый
-func (rf *rotatedFile) rotate() error {
-	// Закрываем текущий файл
-	if err := rf.file.Close(); err != nil {
-		return err
-	}
-
-	// Создаем резервное имя файла с timestamp
-	// Пример: debug.2023-12-11_15-04-05.log
-	timestamp := time.Now().Format("20060102_150405")
-	dir := filepath.Dir(rf.filePath)
-	name := filepath.Base(rf.filePath)
-	ext := filepath.Ext(name)
-	base := strings.TrimSuffix(name, ext)
-	backupPath := filepath.Join(dir, fmt.Sprintf("%s.%s%s", base, timestamp, ext))
-
-	// Переименовываем текущий файл в резервный
-	if err := os.Rename(rf.filePath, backupPath); err != nil {
-		return err
-	}
-
-	// Открываем новый файл для логирования
-	f, err := os.OpenFile(rf.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-
-	// Обновляем файловый дескриптор и обнуляем счетчик размера
-	rf.file = f
-	rf.fileSize = 0
-	return nil
-}
-
-// Close - закрывает файл логирования
-func (rf *rotatedFile) Close() error {
-	rf.fileMutex.Lock()
-	defer rf.fileMutex.Unlock()
-	return rf.file.Close()
-}
-
-// Enabled - проверяет должен ли этот level логироваться
-// Используется slog для фильтрации логов по уровню важности
-func (h *plainTextHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return level >= h.level
-}
-
-func (h *plainTextHandler) Handle(ctx context.Context, r slog.Record) error {
-	// Format: YYYY-MM-DD HH:MM:SS.000000 [LEVEL] [module] message [key=value...]
-	timeStr := r.Time.Format("2006-01-02 15:04:05.000000")
-	levelStr := strings.ToUpper(r.Level.String())
-	msg := r.Message
-	module := h.module // Use module from handler
-
-	// Extract other attributes
-	var otherAttrs []string
-	r.Attrs(func(a slog.Attr) bool {
-		if a.Key == "module" {
-			return true // Skip, use handler's module instead
-		} else if a.Key != slog.TimeKey && a.Key != slog.MessageKey {
-			value := fmt.Sprint(a.Value.Any())
-			otherAttrs = append(otherAttrs, fmt.Sprintf("%s=%s", a.Key, value))
-		}
-		return true
-	})
-
-	// Format: timestamp [LEVEL] [module] message [additional attrs]
-	output := fmt.Sprintf("%s [%s] [%s] %s", timeStr, levelStr, module, msg)
-
-	if len(otherAttrs) > 0 {
-		output += " " + strings.Join(otherAttrs, " ")
-	}
-
-	output += "\n"
-
-	// Handle rotation for rotatedFile
-	switch w := h.w.(type) {
-	case *rotatedFile:
-		_, err := w.Write([]byte(output))
-		return err
-	default:
-		_, err := io.WriteString(h.w, output)
-		return err
-	}
-}
-
-func (h *plainTextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	// Create a new handler with the same settings
-	newH := &plainTextHandler{w: h.w, level: h.level, module: h.module}
-	// Extract module if it's in the attrs
-	for _, a := range attrs {
-		if a.Key == "module" {
-			newH.module = fmt.Sprint(a.Value.Any())
-		}
-	}
-	return newH
-}
-
-func (h *plainTextHandler) WithGroup(name string) slog.Handler {
-	return h
-}
 
 func init() {
-	// Инициализируем глобальный map для логгеров
 	logFiles = make(map[string]io.WriteCloser)
 }
 
-// Init - инициализирует систему логирования с указанными параметрами
-// levelStr: "debug", "info", "warn", "error"
-// dir: папка для логов
-// maxFileSizeMB: максимальный размер одного файла логов
-// Создает папку если ее нет и устанавливает основной логгер
-func Init(levelStr, dir string, maxFileSizeMB int) error {
-	// Создаем папку для логов если ее еще нет
-	if err := os.MkdirAll(dir, 0755); err != nil {
+func Init(levelStr, dir string, maxFileSizeMB int, maxBackups int, maxAgeDays int, compress bool) error {
+	if err := validateLogDir(dir); err != nil {
 		return err
 	}
 
 	logDir = dir
-	// Переводим размер из мегабайт в байты
-	maxLogSize = int64(maxFileSizeMB) * 1024 * 1024
+	if maxFileSizeMB <= 0 {
+		maxFileSizeMB = 100
+	}
+	if maxBackups <= 0 {
+		maxBackups = 10
+	}
+	if maxAgeDays <= 0 {
+		maxAgeDays = 30
+	}
 
-	// Парсим строку уровня логирования в slog.Level
-	// Поддерживаем: debug, info, warn/warning, error
 	switch strings.ToLower(levelStr) {
 	case "debug":
 		logLevel = slog.LevelDebug
@@ -216,50 +59,74 @@ func Init(levelStr, dir string, maxFileSizeMB int) error {
 		logLevel = slog.LevelInfo
 	}
 
-	// Error Log (General)
-	// Открываем файл для error логов
-	// os.O_APPEND: добавляет в конец файла
-	// os.O_CREATE: создает файл если его нет
-	// os.O_WRONLY: открывает только для записи
-	errorLogFile, err := os.OpenFile(filepath.Join(filepath.Clean(dir), "error.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
+	errorLogPath := filepath.Join(filepath.Clean(dir), "error.log")
+	errorLogFile := &lumberjack.Logger{
+		Filename:   errorLogPath,
+		MaxSize:    maxFileSizeMB,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAgeDays,
+		Compress:   compress,
+	}
+	logFiles["error"] = errorLogFile
+
+	outRequestLogPath := filepath.Join(filepath.Clean(dir), "out_request.log")
+	outRequestLogFile := &lumberjack.Logger{
+		Filename:   outRequestLogPath,
+		MaxSize:    maxFileSizeMB,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAgeDays,
+		Compress:   compress,
+	}
+	logFiles["out_request"] = outRequestLogFile
+
+	wsInLogPath := filepath.Join(filepath.Clean(dir), "ws_in.log")
+	wsInLogFile := &lumberjack.Logger{
+		Filename:   wsInLogPath,
+		MaxSize:    maxFileSizeMB,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAgeDays,
+		Compress:   compress,
+	}
+	logFiles["ws_in"] = wsInLogFile
+
+	wsOutLogPath := filepath.Join(filepath.Clean(dir), "ws_out.log")
+	wsOutLogFile := &lumberjack.Logger{
+		Filename:   wsOutLogPath,
+		MaxSize:    maxFileSizeMB,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAgeDays,
+		Compress:   compress,
+	}
+	logFiles["ws_out"] = wsOutLogFile
+
+	auditLogPath := filepath.Join(filepath.Clean(dir), "audit.log")
+	auditLogFile := &lumberjack.Logger{
+		Filename:   auditLogPath,
+		MaxSize:    maxFileSizeMB,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAgeDays,
+		Compress:   compress,
+	}
+	logFiles["audit"] = auditLogFile
+
+	opts := &slog.HandlerOptions{
+		Level:       logLevel,
+		ReplaceAttr: replaceTimeAttr,
 	}
 
-	// Оборачиваем в rotatedFile для автоматической ротации
-	errorRotated := &rotatedFile{
-		file:     errorLogFile,
-		filePath: filepath.Join(filepath.Clean(dir), "error.log"),
-		maxSize:  maxLogSize,
-	}
-	// Получаем текущий размер файла (вдруг были логи до этого запуска)
-	if info, err := errorLogFile.Stat(); err == nil {
-		errorRotated.fileSize = info.Size()
-	}
-	logFiles["error"] = errorRotated
+	errorWriter := io.MultiWriter(os.Stdout, errorLogFile)
+	outRequestWriter := io.MultiWriter(os.Stdout, outRequestLogFile)
+	wsInWriter := io.MultiWriter(os.Stdout, wsInLogFile)
+	wsOutWriter := io.MultiWriter(os.Stdout, wsOutLogFile)
+	auditWriter := io.MultiWriter(os.Stdout, auditLogFile)
 
-	// Открываем отдельный файл для торговых логов (для удобства анализа)
-	tradeLogFile, err := os.OpenFile(filepath.Join(filepath.Clean(dir), "trade.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-
-	// Оборачиваем в rotatedFile для автоматической ротации
-	tradeRotated := &rotatedFile{
-		file:     tradeLogFile,
-		filePath: filepath.Join(filepath.Clean(dir), "trade.log"),
-		maxSize:  maxLogSize,
-	}
-	// Получаем текущий размер файла
-	if info, err := tradeLogFile.Stat(); err == nil {
-		tradeRotated.fileSize = info.Size()
-	}
-	logFiles["trade"] = tradeRotated
-
-	// Создаем глобальные логгеры с пользовательским handler для простого текстового формата
-	// (вместо JSON который использует стандартный slog)
-	Log = slog.New(&plainTextHandler{w: errorRotated, level: logLevel})
-	Trade = slog.New(&plainTextHandler{w: tradeRotated, level: logLevel})
+	Log = slog.New(slog.NewJSONHandler(errorWriter, opts))
+	OutRequestLog = slog.New(slog.NewJSONHandler(outRequestWriter, opts))
+	WSInLog = slog.New(slog.NewJSONHandler(wsInWriter, opts))
+	WSOutLog = slog.New(slog.NewJSONHandler(wsOutWriter, opts))
+	AuditLog = slog.New(slog.NewJSONHandler(auditWriter, opts))
+	Trade = Log
+	slog.SetDefault(Log)
 
 	return nil
 }
@@ -268,18 +135,44 @@ func Init(levelStr, dir string, maxFileSizeMB int) error {
 // module: имя модуля (main, db, trade, orderbook и т.д.)
 // Используется для идентификации источника логов: "2023-12-11 15:04:05 [INFO] [db] Connection established"
 func Get(module string) *slog.Logger {
-	// Если логгер не инициализирован (что странно), возвращаем запасной вариант в stdout
 	if Log == nil {
-		return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo, ReplaceAttr: replaceTimeAttr}))
 	}
-	// Добавляем поле "module" ко всем логам из этого логгера
 	return Log.With("module", module)
+}
+
+func GetOutRequest(module string) *slog.Logger {
+	if OutRequestLog == nil {
+		return Get(module)
+	}
+	return OutRequestLog.With("module", module)
+}
+
+func GetWSIn(module string) *slog.Logger {
+	if WSInLog == nil {
+		return Get(module)
+	}
+	return WSInLog.With("module", module)
+}
+
+func GetWSOut(module string) *slog.Logger {
+	if WSOutLog == nil {
+		return Get(module)
+	}
+	return WSOutLog.With("module", module)
+}
+
+func GetAudit(module string) *slog.Logger {
+	if AuditLog == nil {
+		return Get(module)
+	}
+	return AuditLog.With("module", module)
 }
 
 // GetTrade - возвращает торговый логгер с контекстом модуля
 func GetTrade(module string) *slog.Logger {
 	if Trade == nil {
-		return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo, ReplaceAttr: replaceTimeAttr}))
 	}
 	return Trade.With("module", module)
 }
@@ -320,8 +213,8 @@ func Error(msg string, args ...any) {
 	}
 }
 
-// TradeInfo - логирует информацию о торговле в отдельный файл
-// Все торговые события записываются в trade.log для анализа стратегий
+// TradeInfo - логирует информацию о торговле в основной поток ошибок
+// Торговые события пишутся в unified stream (error.log + stdout)
 // Пример: "Opened position BTC/USDT, entry price 45000"
 func TradeInfo(msg string, args ...any) {
 	if Trade != nil {
@@ -329,7 +222,7 @@ func TradeInfo(msg string, args ...any) {
 	}
 }
 
-// TradeWarn - логирует предупреждение о торговле в отдельный файл
+// TradeWarn - логирует предупреждение о торговле в основной поток ошибок
 // Используется для проблем в торговле которые могут повлиять на результат
 // Пример: "Position margin approaching liquidation level"
 func TradeWarn(msg string, args ...any) {
@@ -338,7 +231,7 @@ func TradeWarn(msg string, args ...any) {
 	}
 }
 
-// TradeError - логирует критичную ошибку о торговле в отдельный файл
+// TradeError - логирует критичную ошибку о торговле в основной поток ошибок
 // Используется для критичных ошибок в торговле которые требуют немедленного внимания
 // Пример: "Failed to place buy order for BTC/USDT"
 func TradeError(msg string, args ...any) {
@@ -376,7 +269,47 @@ func GetLogDir() string {
 	return logDir
 }
 
-// SetMaxLogSize sets the maximum log file size before rotation
-func SetMaxLogSize(size int64) {
-	maxLogSize = size
+func replaceTimeAttr(_ []string, attr slog.Attr) slog.Attr {
+	if attr.Key != slog.TimeKey {
+		return attr
+	}
+	if t, ok := attr.Value.Any().(time.Time); ok {
+		attr.Value = slog.StringValue(t.UTC().Format("2006-01-02T15:04:05.000000Z"))
+	}
+	return attr
+}
+
+func validateLogDir(dir string) error {
+	if dir == "" {
+		return fmt.Errorf("log directory is empty")
+	}
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return fmt.Errorf("create log dir %s: %w", dir, err)
+	}
+
+	file, err := os.CreateTemp(dir, ".write-test-*")
+	if err != nil {
+		return fmt.Errorf("create write test in %s: %w", dir, err)
+	}
+	name := file.Name()
+	if _, err := file.WriteString("test"); err != nil {
+		_ = file.Close()
+		_ = os.Remove(name)
+		return fmt.Errorf("write test in %s: %w", dir, err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(name)
+		return fmt.Errorf("close write test in %s: %w", dir, err)
+	}
+
+	rotated := name + ".rotate"
+	if err := os.Rename(name, rotated); err != nil {
+		_ = os.Remove(name)
+		return fmt.Errorf("rename write test in %s: %w", dir, err)
+	}
+	if err := os.Remove(rotated); err != nil {
+		return fmt.Errorf("cleanup write test in %s: %w", dir, err)
+	}
+
+	return nil
 }

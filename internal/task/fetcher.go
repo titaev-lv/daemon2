@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"ctdaemon/internal/core/exchange"
+	"trader/internal/core/exchange"
 )
 
 // Fetcher периодически загружает задачи мониторинга и торговли из MySQL

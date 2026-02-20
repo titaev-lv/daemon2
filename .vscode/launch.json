@@ -9,8 +9,8 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/cmd/daemon/",
-            "args": ["-c", "${workspaceFolder}/conf/config.ini"],
+            "program": "${workspaceFolder}/cmd/trader/",
+            "args": ["-c", "${workspaceFolder}/conf/config.yaml"],
             "console": "integratedTerminal"
         }
 

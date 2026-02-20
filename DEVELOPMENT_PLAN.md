@@ -1,4 +1,39 @@
-# План разработки ct-system daemon2
+# 🚀 Trader — План разработки
+
+> **Версия**: 1.4  
+> **Дата актуализации**: 2026-02-20  
+> **Статус**: Canonical plan (заменяет `DEVELOPMENT_PLAN_1.md`)
+
+---
+
+## 📋 Актуальный статус (2026-02-20)
+
+### ✅ Выполнено
+
+- ✅ Phase 1 фундамент: структура, типы, конфигурация
+- ✅ Консолидация документации: один canonical `DEVELOPMENT_PLAN.md`
+- ✅ Logging unification в коде: `error.log` + `out_request.log` + `ws_in.log` + `ws_out.log` + `audit.log`
+- ✅ `stdout + file` для всех stream'ов через `io.MultiWriter`
+- ✅ JSON logging + rotation на `lumberjack`
+- ✅ Trader работает в outbound-only модели (локальный HTTP API сервер удален)
+- ✅ WS correlation layer: `event_id` + `request_id` mapping между `ws_out` и `ws_in`
+- ✅ Добавлен TTL 24h и периодическая очистка map корреляций `event_id -> request_id`
+
+### ✅ Закрыто / актуальный статус
+
+- ✅ Logging migration в CT-SYSTEM завершена: runtime-валидация в compose пройдена (docker logs + файловые потоки)
+- ✅ Integration wiring для контейнерного запуска Trader в составе CT-SYSTEM финализирован
+- ✅ Integration test-процедуры Trader синхронизированы с root `TESTING.md`
+
+### ℹ️ Что подтверждено в коде и runtime
+
+- Унификация логирования реализована в коде (`slog`, `lumberjack`, `stdout + file`, `out_request`, `ws_in`, `ws_out`, `audit`)
+- End-to-end smoke проверка в составе CT-SYSTEM выполнена: startup JSON logs и file streams подтверждены
+
+### ℹ️ Примечание по документам
+
+- Этот файл является **единственным актуальным планом развития Trader**.
+- Исторический файл `DEVELOPMENT_PLAN_1.md` выведен из использования.
 
 ## Структура плана
 
@@ -114,7 +149,7 @@ type MonitoringTask struct {
     TradePair    string // BTC/USDT и т.д.
 }
 ```
-**Использование**: Описывает что мониторить (загружается из MySQL MONITORING таблицы)
+**Использование**: Описывает что мониторить (получается из CTS-Core по WS task flow)
 
 #### TradingTask
 ```go
@@ -128,7 +163,7 @@ type TradingTask struct {
     StrategyParams map[string]interface{} // Параметры стратегии в JSON формате
 }
 ```
-**Использование**: Описывает что торговать и какой стратегией (загружается из MySQL TRADE таблицы)
+**Использование**: Описывает что торговать и какой стратегией (получается из CTS-Core по WS task flow)
 
 #### TasksData
 ```go
@@ -138,7 +173,7 @@ type TasksData struct {
     TradingTasks    []TradingTask    // Пары для торговли
 }
 ```
-**Использование**: Объединение всех задач при загрузке из БД (каждые 5-10 сек)
+**Использование**: Объединение всех задач из потока CTS-Core (каждые 5-10 сек)
 
 ### Вспомогательные функции:
 - `GetOrderBookKey(exchangeID, pair, marketType)` - уникальный ключ для orderbook
@@ -273,7 +308,6 @@ $ go build ./internal/core/messaging
 ```go
 type Config struct {
     Role      string
-    Database  DatabaseConfig
     ClickHouse ClickHouseConfig
     Monitor   MonitorConfig
     Trader    TraderConfig
@@ -303,18 +337,18 @@ type ClickHouseConfig struct {
 **Проверка результата**:
 ```bash
 $ grep -n "type Config struct" internal/config/config.go
-$ go build ./cmd/daemon/
+$ go build ./cmd/trader/
 ```
 
 ---
 
-## 1.5 Database Analysis & Task Mapping
+## 1.5 CTS-Core Task Mapping
 
-**Статус**: ✅ ВЫПОЛНЕНО (DATABASE ALREADY EXISTS)
+**Статус**: ✅ ВЫПОЛНЕНО (task flow согласован с CTS-Core)
 
-**Файл**: `ct_system_new.sql` (уже в production)
+да**Файл**: `services/cts-core/API_SPECIFICATION.md`
 
-**Цель**: Понять архитектуру БД и mapping на Go типы
+**Цель**: Зафиксировать mapping payload'ов задач CTS-Core на Go типы
 
 **Ключевые таблицы** (уже созданы):
 
@@ -832,18 +866,17 @@ $ go test ./internal/core/pubsub -v
 
 # PHASE 4: Task Management и Subscription
 
-## 4.1 Task Fetcher из MySQL
+## 4.1 Task Fetcher из CTS-Core
 
 **Файл**: `internal/task/fetcher.go`
 
-**Цель**: периодически загружать задачи из MySQL
+**Цель**: периодически получать задачи из CTS-Core (WS events)
 
 **Содержание**:
 ```go
 package task
 
 type Fetcher struct {
-    db          *sql.DB
     interval    time.Duration
     
     lastMonitoring []exchange.MonitoringTask
@@ -863,8 +896,7 @@ func (f *Fetcher) Start() error {
 }
 
 func (f *Fetcher) Fetch() (*TasksData, error) {
-    // Query MONITORING table
-    // Query TRADE table
+    // Read task events from CTS-Core stream
     // Update lastMonitoring, lastTrading
     // Return combined data
 }
@@ -1359,7 +1391,7 @@ func (m *Manager) Stop() error {
 
 **Проверка результата**:
 ```bash
-$ go build ./cmd/daemon/
+$ go build ./cmd/trader/
 ```
 
 ---
@@ -1442,7 +1474,7 @@ $ go test -bench=. -benchmem
 
 **Сценарии**:
 - [ ] Обрыв WS соединения → автоматическое переподключение
-- [ ] MySQL недоступна → буферизация, повторные попытки
+- [ ] CTS-Core недоступен → буферизация, повторные попытки
 - [ ] ClickHouse недоступна → буферизация
 - [ ] OOM → graceful shutdown
 

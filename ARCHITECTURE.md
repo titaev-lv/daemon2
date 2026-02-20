@@ -100,7 +100,6 @@
 
 ```
 internal/
-├── api/                      # REST API сервер
 ├── config/                   # Конфигурация
 ├── db/                       # Database drivers
 ├── logger/                   # Логирование

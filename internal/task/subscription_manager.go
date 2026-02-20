@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	"ctdaemon/internal/core/exchange"
-	"ctdaemon/internal/core/ws"
+	"trader/internal/core/exchange"
+	"trader/internal/core/ws"
 )
 
 // SubscriptionManager сравнивает новые задачи с предыдущими и вычисляет дельту

@@ -385,9 +385,9 @@ PRICE_SPOT_LOG    ~150 bytes           ~1 MB          ~150 GB 🔥
 
 2️⃣ ЗАПУСК ДЕМОНА:
 
-   go run main.go --config config.ini
+     go run main.go --config config.yaml
         ↓
-   Демон парсит config.ini → MonitorConfig struktura
+     Демон парсит config.yaml → MonitorConfig struktura
         ↓
    SELECT * FROM MONITORING WHERE ID = config_id AND ACTIVE = 1
         ↓
@@ -452,33 +452,33 @@ PRICE_SPOT_LOG    ~150 bytes           ~1 MB          ~150 GB 🔥
 
 ---
 
-## 💾 Параметры подключения (из config.ini)
+## 💾 Параметры подключения (из config.yaml)
 
-```
-[database]
-type = mysql                    # MySQL/PostgreSQL
-host = localhost
-port = 3306
-username = ct_system_user
-password = *****
-database = ct_system
-max_connections = 20            # Connection pool
-max_idle = 5
+```yaml
+database:
+     type: mysql                    # MySQL/PostgreSQL
+     host: localhost
+     port: 3306
+     username: ct_system_user
+     password: *****
+     database: ct_system
+     max_connections: 20            # Connection pool
+     max_idle: 5
 
-[role]
-type = both                      # monitor, trader, или both
-monitoring_config_id = 1         # ID из MONITORING таблицы
-trade_config_id = 1              # ID из TRADE таблицы
-daemon_name = prod-daemon-1      # Для DAEMON_STATE
+role:
+     type: both                     # monitor, trader, или both
+     monitoring_config_id: 1        # ID из MONITORING таблицы
+     trade_config_id: 1             # ID из TRADE таблицы
+     daemon_name: prod-daemon-1     # Для DAEMON_STATE
 
-[clickhouse]
-host = clickhouse.internal
-port = 9000
-database = analytics
-username = default
-password = *****
-max_batch_size = 10000
-replication_factor = 2           # Для репликации в кластере
+clickhouse:
+     host: clickhouse.internal
+     port: 9000
+     database: analytics
+     username: default
+     password: *****
+     max_batch_size: 10000
+     replication_factor: 2          # Для репликации в кластере
 ```
 
 ---

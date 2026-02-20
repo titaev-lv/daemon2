@@ -2,13 +2,13 @@
 
 ## 📋 Обзор Phase 1.3
 
-**Цель**: Расширить конфигурационную систему для поддержки двух ролей демона и подключения к ClickHouse.
+**Цель**: Расширить конфигурационную систему для поддержки двух ролей Trader и подключения к ClickHouse.
 
 **Статус**: ✅ ЗАВЕРШЕНО
 
 **Файлы**:
 - `internal/config/config.go` - расширенная структура конфигурации
-- `conf/config.example.ini` - пример полной конфигурации с комментариями
+- `conf/config.example.yaml` - пример полной конфигурации с комментариями
 
 ---
 
@@ -16,11 +16,11 @@
 
 ### Двойственность ролей
 
-Демон теперь может работать в одной из трех ролей:
+Trader теперь может работать в одной из трех ролей:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ ctdaemon (единое приложение)                        │
+│ trader (единое приложение)                          │
 └────────────┬──────────────────────────────┬─────────┘
              │                              │
      ┌───────▼────────┐           ┌─────────▼────────┐
@@ -35,7 +35,7 @@
 ```
 
 **Преимущества**:
-- Один демон может быть и монитором и трейдером
+- Один сервис может быть и монитором и трейдером
 - Монитор и Трейдер могут запускаться независимо
 - Масштабируемость: можно иметь несколько мониторов и один трейдер
 - Модульность: легко отключить непотребную функцию
@@ -63,7 +63,7 @@ type Config struct {
 ```
 
 **Назначение каждого поля**:
-- `Role` - определяет что делать демону (мониторить, торговать или оба)
+- `Role` - определяет что делать сервису (мониторить, торговать или оба)
 - `Monitor` - параметры сбора данных (глубина OB, batch size и т.д.)
 - `Trader` - параметры торговли (max orders, стратегия, риск)
 - `ClickHouse` - где хранить исторические данные
@@ -89,22 +89,22 @@ type MonitorConfig struct {
 
 **Примеры использования**:
 
-```ini
+```yaml
 # Для быстрого сбора данных (меньше задержки, больше памяти)
-[monitor]
-orderbook_depth = 50      # Глубокая книга
-batch_size = 1000         # Большой batch
-batch_interval_sec = 2    # Часто отправляем
-ring_buffer_size = 50000  # Большой кэш
-save_interval = 2
+monitor:
+    orderbook_depth: 50      # Глубокая книга
+    batch_size: 1000         # Большой batch
+    batch_interval_sec: 2    # Часто отправляем
+    ring_buffer_size: 50000  # Большой кэш
+    save_interval: 2
 
 # Для экономного сбора (меньше памяти, больше задержка)
-[monitor]
-orderbook_depth = 20      # Мелкая книга
-batch_size = 100          # Маленький batch
-batch_interval_sec = 10   # Редко отправляем
-ring_buffer_size = 1000   # Маленький кэш
-save_interval = 10
+monitor:
+    orderbook_depth: 20      # Мелкая книга
+    batch_size: 100          # Маленький batch
+    batch_interval_sec: 10   # Редко отправляем
+    ring_buffer_size: 1000   # Маленький кэш
+    save_interval: 10
 ```
 
 **Алгоритм сбора данных**:
@@ -144,24 +144,24 @@ type TraderConfig struct {
 
 **Примеры использования**:
 
-```ini
+```yaml
 # Консервативная торговля (мало ордеров, малый риск)
-[trader]
-max_open_orders = 5
-max_position_size = 500.0
-default_strategy = dca           # Dollar Cost Averaging (надежная)
-strategy_update_interval = 30    # Редко обновляем
-slippage_percent = 0.1           # Строгие требования
-enable_backtest = true           # Сначала тестируем!
+trader:
+    max_open_orders: 5
+    max_position_size: 500.0
+    default_strategy: dca           # Dollar Cost Averaging (надежная)
+    strategy_update_interval: 30    # Редко обновляем
+    slippage_percent: 0.1           # Строгие требования
+    enable_backtest: true           # Сначала тестируем!
 
 # Агрессивная торговля (много ордеров, высокий риск)
-[trader]
-max_open_orders = 20
-max_position_size = 5000.0
-default_strategy = grid          # Grid Trading (высокочастотная)
-strategy_update_interval = 5     # Часто обновляем
-slippage_percent = 1.0           # Мягче к проскальзыванию
-enable_backtest = false          # Уже тестировали
+trader:
+    max_open_orders: 20
+    max_position_size: 5000.0
+    default_strategy: grid          # Grid Trading (высокочастотная)
+    strategy_update_interval: 5     # Часто обновляем
+    slippage_percent: 1.0           # Мягче к проскальзыванию
+    enable_backtest: false          # Уже тестировали
 ```
 
 **Риск менеджмент**:
@@ -219,27 +219,27 @@ type ClickHouseConfig struct {
 
 **Примеры конфигурации**:
 
-```ini
+```yaml
 # Для разработки (локальный ClickHouse)
-[clickhouse]
-host = localhost
-port = 8123
-username = default
-password = 
-compression = false
-replication_factor = 1
+clickhouse:
+    host: localhost
+    port: 8123
+    username: default
+    password: ""
+    compression: false
+    replication_factor: 1
 
 # Для production (облачный ClickHouse)
-[clickhouse]
-host = clickhouse-prod.company.com
-port = 8123
-username = crypto_service
-password = very_secure_password
-use_tls = true
-tls_skip_verify = false
-compression = true           # Сжимаем трафик
-max_batch_size = 50000      # Большие batches
-replication_factor = 2       # Дублируем данные
+clickhouse:
+    host: clickhouse-prod.company.com
+    port: 8123
+    username: crypto_service
+    password: very_secure_password
+    use_tls: true
+    tls_skip_verify: false
+    compression: true           # Сжимаем трафик
+    max_batch_size: 50000       # Большие batches
+    replication_factor: 2       # Дублируем данные
 ```
 
 ---
@@ -248,23 +248,22 @@ replication_factor = 2       # Дублируем данные
 
 ### Сценарий 1: Только мониторинг (сбор данных)
 
-```ini
-[role]
-mode = monitor
+```yaml
+role: monitor
 
-[monitor]
-orderbook_depth = 50
-batch_size = 1000
-batch_interval_sec = 3
-ring_buffer_size = 30000
-save_interval = 5
+monitor:
+    orderbook_depth: 50
+    batch_size: 1000
+    batch_interval_sec: 3
+    ring_buffer_size: 30000
+    save_interval: 5
 
-[clickhouse]
-host = clickhouse-prod.company.com
-port = 8123
-username = monitor_user
-password = pass
-compression = true
+clickhouse:
+    host: clickhouse-prod.company.com
+    port: 8123
+    username: monitor_user
+    password: pass
+    compression: true
 ```
 
 **Что происходит**:
@@ -276,18 +275,17 @@ compression = true
 
 ### Сценарий 2: Только торговля (исполнение стратегий)
 
-```ini
-[role]
-mode = trader
+```yaml
+role: trader
 
-[trader]
-max_open_orders = 10
-max_position_size = 1000.0
-default_strategy = grid
-strategy_update_interval = 10
-enable_backtest = false
+trader:
+    max_open_orders: 10
+    max_position_size: 1000.0
+    default_strategy: grid
+    strategy_update_interval: 10
+    enable_backtest: false
 
-# Monitor конфиг не используется
+# monitor конфиг не используется
 ```
 
 **Что происходит**:
@@ -299,26 +297,25 @@ enable_backtest = false
 
 ### Сценарий 3: Оба режима одновременно (monitoring + trading)
 
-```ini
-[role]
-mode = both
+```yaml
+role: both
 
-[monitor]
-orderbook_depth = 20
-batch_size = 500
-batch_interval_sec = 5
-ring_buffer_size = 10000
-save_interval = 5
+monitor:
+    orderbook_depth: 20
+    batch_size: 500
+    batch_interval_sec: 5
+    ring_buffer_size: 10000
+    save_interval: 5
 
-[trader]
-max_open_orders = 5
-max_position_size = 500.0
-default_strategy = dca
-strategy_update_interval = 20
-enable_backtest = false
+trader:
+    max_open_orders: 5
+    max_position_size: 500.0
+    default_strategy: dca
+    strategy_update_interval: 20
+    enable_backtest: false
 
-[clickhouse]
-host = clickhouse-prod.company.com
+clickhouse:
+    host: clickhouse-prod.company.com
 ```
 
 **Что происходит**:
@@ -332,7 +329,7 @@ host = clickhouse-prod.company.com
 ## 🔄 Загрузка конфигурации
 
 ```go
-cfg, err := config.Load("conf/config.ini")
+cfg, err := config.Load("conf/config.yaml")
 
 // После загрузки можно проверить роль:
 switch cfg.Role {
@@ -389,10 +386,10 @@ ORDER BY (timestamp, exchange, pair);
 ## ✅ Контрольный список
 
 - ✅ Config структура расширена (Role, Monitor, Trader, ClickHouse)
-- ✅ Функция Load() парсит все новые параметры из INI
+- ✅ Функция Load() парсит все новые параметры из YAML
 - ✅ Значения по умолчанию для всех параметров
 - ✅ Подробные комментарии в каждом поле
-- ✅ Пример конфигурации (config.full.example.ini)
+- ✅ Пример конфигурации (config.example.yaml)
 - ✅ Все скомпилировалось без ошибок
 
 ---

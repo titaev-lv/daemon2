@@ -1,99 +1,64 @@
-// Package config отвечает за загрузку и парсинг конфигурации приложения
-// Конфигурация хранится в INI формате для удобства чтения и редактирования
-// Все параметры разбиты по секциям: database, server, log, trade, orderbook
+// Package config отвечает за загрузку и парсинг конфигурации приложения.
+// Конфигурация хранится в YAML формате.
 package config
 
 import (
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 
-	"github.com/go-ini/ini"
+	"gopkg.in/yaml.v3"
 )
 
 // Config - главная структура конфигурации приложения
 // Содержит все настройки для всех компонентов демона
 type Config struct {
-	// Database - параметры подключения к БД (MySQL/PostgreSQL)
-	Database DatabaseConfig
-	// Server - настройки REST API сервера
-	Server ServerConfig
 	// Log - параметры логирования
-	Log LogConfig
+	Log LogConfig `yaml:"log"`
 	// Trade - параметры торговых операций
-	Trade TradeConfig
+	Trade TradeConfig `yaml:"trade"`
 	// OrderBook - параметры управления книгой ордеров
-	OrderBook OrderBookConfig
+	OrderBook OrderBookConfig `yaml:"orderbook"`
 	// Role - роль демона: "monitor" (сбор данных), "trader" (торговля) или "both" (оба)
-	Role string
+	Role string `yaml:"role"`
 	// Monitor - конфигурация для мониторинга (используется если Role = "monitor" или "both")
-	Monitor MonitorConfig
+	Monitor MonitorConfig `yaml:"monitor"`
 	// Trader - конфигурация для торговли (используется если Role = "trader" или "both")
-	Trader TraderConfig
+	Trader TraderConfig `yaml:"trader"`
 	// ClickHouse - параметры подключения к ClickHouse для исторических данных
-	ClickHouse ClickHouseConfig
+	ClickHouse ClickHouseConfig `yaml:"clickhouse"`
 }
 
 // OrderBookConfig - настройки для управления книгой ордеров
 type OrderBookConfig struct {
 	// DebugLogRaw - логировать ли сырые сообщения от бирж (много данных!)
-	DebugLogRaw bool
+	DebugLogRaw bool `yaml:"debug_log_raw"`
 	// DebugLogMsg - логировать ли обработанные сообщения (также много данных!)
-	DebugLogMsg bool
-}
-
-// DatabaseConfig - параметры подключения к базе данных
-// Поддерживает MySQL и PostgreSQL
-type DatabaseConfig struct {
-	// Type - тип базы данных ("mysql" или "postgres")
-	Type string
-	// User - имя пользователя для подключения
-	User string
-	// Password - пароль для подключения
-	Password string
-	// Host - адрес хоста БД (IP или имя хоста)
-	Host string
-	// Port - порт подключения (MySQL по умолчанию 3306, PostgreSQL 5432)
-	Port int
-	// Name - название базы данных
-	Name string
-	// UseTLS - использовать ли TLS/SSL для защищенного подключения
-	UseTLS bool
-	// CACert - путь к сертификату CA для проверки сертификата сервера
-	CACert string
-	// ClientCert - путь к сертификату клиента для клиентской аутентификации
-	ClientCert string
-	// ClientKey - путь к приватному ключу клиента
-	ClientKey string
-	// TLSSkipVerify - пропустить проверку сертификата (небезопасно, для IP адресов)
-	TLSSkipVerify bool
-	// ConnectTimeoutSec - таймаут подключения в секундах
-	ConnectTimeoutSec int
-	// MaxRetries - максимальное количество попыток подключения при ошибке
-	MaxRetries int
-}
-
-// ServerConfig - конфигурация REST API сервера
-type ServerConfig struct {
-	// Port - порт на котором запускается HTTP сервер
-	Port int
-	// StateFile - путь к файлу для сохранения состояния демона
-	StateFile string
+	DebugLogMsg bool `yaml:"debug_log_msg"`
 }
 
 // LogConfig - конфигурация системы логирования
 type LogConfig struct {
 	// Level - уровень логирования (debug, info, warn, error)
-	Level string
+	Level string `yaml:"level"`
 	// Dir - папка куда писать логи
-	Dir string
+	Dir string `yaml:"dir"`
 	// MaxFileSizeMB - максимальный размер одного лог файла в мегабайтах
 	// При достижении размера файл ротируется с добавлением timestamp
-	MaxFileSizeMB int
+	MaxFileSizeMB int `yaml:"max_file_size_mb"`
+	// MaxBackups - сколько файлов хранить после ротации
+	MaxBackups int `yaml:"max_backups"`
+	// MaxAgeDays - сколько дней хранить rotated логи
+	MaxAgeDays int `yaml:"max_age_days"`
+	// Compress - сжимать rotated логи
+	Compress bool `yaml:"compress"`
 }
 
 // TradeConfig - конфигурация торговых операций
 type TradeConfig struct {
 	// UpdateInterval - интервал обновления статуса торговых позиций в секундах
-	UpdateInterval int
+	UpdateInterval int `yaml:"update_interval"`
 }
 
 // MonitorConfig - конфигурация для режима Monitor
@@ -104,26 +69,26 @@ type MonitorConfig struct {
 	// 20 = быстро но меньше данных
 	// 50 = компромисс между скоростью и полнотой
 	// 0 = полная книга ордеров (медленно, много данных)
-	OrderBookDepth int
+	OrderBookDepth int `yaml:"orderbook_depth"`
 
 	// BatchSize - количество обновлений собираемых в batch перед отправкой в ClickHouse
 	// Больший размер = меньше запросов к БД, но больше памяти
 	// Рекомендуется 100-1000
-	BatchSize int
+	BatchSize int `yaml:"batch_size"`
 
 	// BatchIntervalSec - максимальное время в секундах между отправками batch в ClickHouse
 	// Даже если не собрали полный BatchSize, отправим через это время
 	// Гарантирует что данные не залеживаются более чем на N секунд
-	BatchIntervalSec int
+	BatchIntervalSec int `yaml:"batch_interval_sec"`
 
 	// RingBufferSize - размер ring buffer для хранения исторических данных в памяти
 	// Ring buffer хранит последние N обновлений для быстрого доступа без запроса к БД
 	// Рекомендуется 5000-50000 в зависимости от памяти
-	RingBufferSize int
+	RingBufferSize int `yaml:"ring_buffer_size"`
 
 	// SaveInterval - интервал сохранения данных в ClickHouse в секундах
 	// Как часто Monitor запускает batch send в БД
-	SaveInterval int
+	SaveInterval int `yaml:"save_interval"`
 }
 
 // TraderConfig - конфигурация для режима Trader
@@ -131,26 +96,26 @@ type MonitorConfig struct {
 type TraderConfig struct {
 	// MaxOpenOrders - максимальное количество открытых ордеров одновременно
 	// Предотвращает излишнее накопление ордеров при сбое стратегии
-	MaxOpenOrders int
+	MaxOpenOrders int `yaml:"max_open_orders"`
 
 	// MaxPositionSize - максимальный размер позиции в USDT
 	// Ограничивает риск одной позиции
-	MaxPositionSize float64
+	MaxPositionSize float64 `yaml:"max_position_size"`
 
 	// DefaultStrategy - стратегия по умолчанию для новых пар
 	// Возможные значения: "grid", "dca", "scalp" и т.д.
-	DefaultStrategy string
+	DefaultStrategy string `yaml:"default_strategy"`
 
 	// StrategyUpdateInterval - интервал обновления стратегий в секундах
 	// Как часто Trader переоценивает стратегию для каждой пары
-	StrategyUpdateInterval int
+	StrategyUpdateInterval int `yaml:"strategy_update_interval"`
 
 	// SlippagePercent - допустимое проскальзывание в процентах при исполнении ордера
 	// Если ордер исполнится хуже на больший процент - отменяется и переставляется
-	SlippagePercent float64
+	SlippagePercent float64 `yaml:"slippage_percent"`
 
 	// EnableBacktest - включить ли режим бэктестирования (тестирование без реального исполнения)
-	EnableBacktest bool
+	EnableBacktest bool `yaml:"enable_backtest"`
 }
 
 // ClickHouseConfig - конфигурация для подключения к ClickHouse
@@ -158,136 +123,245 @@ type TraderConfig struct {
 // В отличие от MySQL, ClickHouse оптимизирована для аналитики и огромных датасетов
 type ClickHouseConfig struct {
 	// Host - адрес хоста ClickHouse
-	Host string
+	Host string `yaml:"host"`
 
 	// Port - порт ClickHouse HTTP API (обычно 8123)
-	Port int
+	Port int `yaml:"port"`
 
 	// Database - название базы данных в ClickHouse
-	Database string
+	Database string `yaml:"database"`
 
 	// Username - имя пользователя для подключения
-	Username string
+	Username string `yaml:"username"`
 
 	// Password - пароль для подключения
-	Password string
+	Password string `yaml:"password"`
 
 	// UseTLS - использовать ли HTTPS для подключения
-	UseTLS bool
+	UseTLS bool `yaml:"use_tls"`
 
 	// TLSSkipVerify - пропустить проверку сертификата (небезопасно)
-	TLSSkipVerify bool
+	TLSSkipVerify bool `yaml:"tls_skip_verify"`
 
 	// ConnectTimeoutSec - таймаут подключения в секундах
-	ConnectTimeoutSec int
+	ConnectTimeoutSec int `yaml:"connect_timeout_sec"`
 
 	// MaxRetries - максимальное количество попыток подключения
-	MaxRetries int
+	MaxRetries int `yaml:"max_retries"`
 
 	// Compression - включить ли сжатие данных при отправке
 	// Значительно снижает трафик для больших объемов данных
-	Compression bool
+	Compression bool `yaml:"compression"`
 
 	// MaxBatchSize - максимальный размер batch для отправки данных
 	// ClickHouse эффективнее работает с большими batch, но нужна память
-	MaxBatchSize int
+	MaxBatchSize int `yaml:"max_batch_size"`
 
 	// ReplicationFactor - фактор репликации данных в ClickHouse
 	// 1 = без репликации (быстро но рискованно)
 	// 2+ = с репликацией (надежно но медленнее)
-	ReplicationFactor int
+	ReplicationFactor int `yaml:"replication_factor"`
 }
 
-// Load - загружает конфигурацию из INI файла
-// Парсит все секции и устанавливает значения по умолчанию если параметр не указан
-// Возвращает ошибку если файл не найден или содержит невалидные данные
+// Load загружает конфигурацию из YAML файла.
 func Load(path string) (*Config, error) {
-	// Загружаем INI файл
-	cfg, err := ini.Load(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config file: %w", err)
 	}
 
-	c := &Config{}
-
-	// ========== DATABASE СЕКЦИЯ ==========
-	// Парсим все параметры подключения к БД
-	// MustString("default") вернет default если ключ не найден
-	// MustInt(default) вернет default если ключ не найден или невалидный
-	c.Database.Type = cfg.Section("database").Key("type").MustString("mysql")
-	c.Database.User = cfg.Section("database").Key("user").String()
-	c.Database.Password = cfg.Section("database").Key("password").String()
-	c.Database.Host = cfg.Section("database").Key("host").String()
-	c.Database.Port = cfg.Section("database").Key("port").MustInt(3306)
-	c.Database.Name = cfg.Section("database").Key("name").String()
-	c.Database.UseTLS = cfg.Section("database").Key("use_tls").MustBool(false)
-	c.Database.CACert = cfg.Section("database").Key("ca_cert").String()
-	c.Database.ClientCert = cfg.Section("database").Key("client_cert").String()
-	c.Database.ClientKey = cfg.Section("database").Key("client_key").String()
-	c.Database.TLSSkipVerify = cfg.Section("database").Key("tls_skip_verify").MustBool(false)
-	c.Database.ConnectTimeoutSec = cfg.Section("database").Key("connect_timeout_sec").MustInt(10)
-	// MaxRetries - КРИТИЧНЫЙ параметр! Без него демон падает при первой ошибке подключения
-	c.Database.MaxRetries = cfg.Section("database").Key("max_retries").MustInt(0)
-
-	// ========== SERVER СЕКЦИЯ ==========
-	// REST API сервер слушает на этом порту
-	c.Server.Port = cfg.Section("server").Key("port").MustInt(8080)
-	c.Server.StateFile = cfg.Section("server").Key("state_file").MustString("state.json")
-
-	// ========== LOG СЕКЦИЯ ==========
-	// Параметры логирования влияют на объем и детальность логов
-	c.Log.Level = cfg.Section("log").Key("level").MustString("info")
-	c.Log.Dir = cfg.Section("log").Key("dir").MustString("./logs")
-	c.Log.MaxFileSizeMB = cfg.Section("log").Key("max_file_size_mb").MustInt(10)
-
-	// ========== TRADE СЕКЦИЯ ==========
-	// Параметры торговли
-	c.Trade.UpdateInterval = cfg.Section("trade").Key("update_interval").MustInt(5)
-
-	// ========== ORDERBOOK СЕКЦИЯ ==========
-	// Параметры отладки для отслеживания изменений в книге ордеров
-	// ВНИМАНИЕ: Включение этих флагов создает ОГРОМНОЕ количество логов!
-	c.OrderBook.DebugLogRaw = cfg.Section("orderbook").Key("debug_log_raw").MustBool(false)
-	c.OrderBook.DebugLogMsg = cfg.Section("orderbook").Key("debug_log_msg").MustBool(false)
-
-	// ========== ROLE СЕКЦИЯ ==========
-	// Определяет основную роль демона
-	// monitor = только сбор данных в ClickHouse
-	// trader = только торговля на основе заранее загруженных данных
-	// both = и мониторинг и торговля одновременно
-	c.Role = cfg.Section("role").Key("mode").MustString("monitor")
-
-	// ========== MONITOR СЕКЦИЯ ==========
-	// Параметры мониторинга (для Monitor компонента)
-	c.Monitor.OrderBookDepth = cfg.Section("monitor").Key("orderbook_depth").MustInt(20)
-	c.Monitor.BatchSize = cfg.Section("monitor").Key("batch_size").MustInt(500)
-	c.Monitor.BatchIntervalSec = cfg.Section("monitor").Key("batch_interval_sec").MustInt(5)
-	c.Monitor.RingBufferSize = cfg.Section("monitor").Key("ring_buffer_size").MustInt(10000)
-	c.Monitor.SaveInterval = cfg.Section("monitor").Key("save_interval").MustInt(5)
-
-	// ========== TRADER СЕКЦИЯ ==========
-	// Параметры торговли (для Trader компонента)
-	c.Trader.MaxOpenOrders = cfg.Section("trader").Key("max_open_orders").MustInt(10)
-	c.Trader.MaxPositionSize = cfg.Section("trader").Key("max_position_size").MustFloat64(1000.0)
-	c.Trader.DefaultStrategy = cfg.Section("trader").Key("default_strategy").MustString("grid")
-	c.Trader.StrategyUpdateInterval = cfg.Section("trader").Key("strategy_update_interval").MustInt(10)
-	c.Trader.SlippagePercent = cfg.Section("trader").Key("slippage_percent").MustFloat64(0.5)
-	c.Trader.EnableBacktest = cfg.Section("trader").Key("enable_backtest").MustBool(false)
-
-	// ========== CLICKHOUSE СЕКЦИЯ ==========
-	// Параметры подключения к ClickHouse для исторических данных
-	c.ClickHouse.Host = cfg.Section("clickhouse").Key("host").MustString("localhost")
-	c.ClickHouse.Port = cfg.Section("clickhouse").Key("port").MustInt(8123)
-	c.ClickHouse.Database = cfg.Section("clickhouse").Key("database").MustString("crypto")
-	c.ClickHouse.Username = cfg.Section("clickhouse").Key("username").String()
-	c.ClickHouse.Password = cfg.Section("clickhouse").Key("password").String()
-	c.ClickHouse.UseTLS = cfg.Section("clickhouse").Key("use_tls").MustBool(false)
-	c.ClickHouse.TLSSkipVerify = cfg.Section("clickhouse").Key("tls_skip_verify").MustBool(false)
-	c.ClickHouse.ConnectTimeoutSec = cfg.Section("clickhouse").Key("connect_timeout_sec").MustInt(10)
-	c.ClickHouse.MaxRetries = cfg.Section("clickhouse").Key("max_retries").MustInt(3)
-	c.ClickHouse.Compression = cfg.Section("clickhouse").Key("compression").MustBool(true)
-	c.ClickHouse.MaxBatchSize = cfg.Section("clickhouse").Key("max_batch_size").MustInt(10000)
-	c.ClickHouse.ReplicationFactor = cfg.Section("clickhouse").Key("replication_factor").MustInt(1)
+	c := defaultConfig()
+	if err := yaml.Unmarshal(data, c); err != nil {
+		return nil, fmt.Errorf("failed to parse yaml config: %w", err)
+	}
+	applyDefaults(c)
+	applyEnvOverrides(c)
 
 	return c, nil
+}
+
+func defaultConfig() *Config {
+	return &Config{
+		Log: LogConfig{
+			Level:         "info",
+			Dir:           "./logs",
+			MaxFileSizeMB: 10,
+			MaxBackups:    10,
+			MaxAgeDays:    30,
+			Compress:      false,
+		},
+		Trade: TradeConfig{UpdateInterval: 5},
+		OrderBook: OrderBookConfig{
+			DebugLogRaw: false,
+			DebugLogMsg: false,
+		},
+		Role: "monitor",
+		Monitor: MonitorConfig{
+			OrderBookDepth:   20,
+			BatchSize:        500,
+			BatchIntervalSec: 5,
+			RingBufferSize:   10000,
+			SaveInterval:     5,
+		},
+		Trader: TraderConfig{
+			MaxOpenOrders:          10,
+			MaxPositionSize:        1000.0,
+			DefaultStrategy:        "grid",
+			StrategyUpdateInterval: 10,
+			SlippagePercent:        0.5,
+			EnableBacktest:         false,
+		},
+		ClickHouse: ClickHouseConfig{
+			Host:              "localhost",
+			Port:              8123,
+			Database:          "crypto",
+			UseTLS:            false,
+			TLSSkipVerify:     false,
+			ConnectTimeoutSec: 10,
+			MaxRetries:        3,
+			Compression:       true,
+			MaxBatchSize:      10000,
+			ReplicationFactor: 1,
+		},
+	}
+}
+
+func applyDefaults(c *Config) {
+	if c.Log.Level == "" {
+		c.Log.Level = "info"
+	}
+	if c.Log.Dir == "" {
+		c.Log.Dir = "./logs"
+	}
+	if c.Log.MaxFileSizeMB == 0 {
+		c.Log.MaxFileSizeMB = 10
+	}
+	if c.Log.MaxBackups == 0 {
+		c.Log.MaxBackups = 10
+	}
+	if c.Log.MaxAgeDays == 0 {
+		c.Log.MaxAgeDays = 30
+	}
+
+	if c.Trade.UpdateInterval == 0 {
+		c.Trade.UpdateInterval = 5
+	}
+
+	if c.Role == "" {
+		c.Role = "monitor"
+	}
+
+	if c.Monitor.OrderBookDepth == 0 {
+		c.Monitor.OrderBookDepth = 20
+	}
+	if c.Monitor.BatchSize == 0 {
+		c.Monitor.BatchSize = 500
+	}
+	if c.Monitor.BatchIntervalSec == 0 {
+		c.Monitor.BatchIntervalSec = 5
+	}
+	if c.Monitor.RingBufferSize == 0 {
+		c.Monitor.RingBufferSize = 10000
+	}
+	if c.Monitor.SaveInterval == 0 {
+		c.Monitor.SaveInterval = 5
+	}
+
+	if c.Trader.MaxOpenOrders == 0 {
+		c.Trader.MaxOpenOrders = 10
+	}
+	if c.Trader.MaxPositionSize == 0 {
+		c.Trader.MaxPositionSize = 1000.0
+	}
+	if c.Trader.DefaultStrategy == "" {
+		c.Trader.DefaultStrategy = "grid"
+	}
+	if c.Trader.StrategyUpdateInterval == 0 {
+		c.Trader.StrategyUpdateInterval = 10
+	}
+	if c.Trader.SlippagePercent == 0 {
+		c.Trader.SlippagePercent = 0.5
+	}
+
+	if c.ClickHouse.Host == "" {
+		c.ClickHouse.Host = "localhost"
+	}
+	if c.ClickHouse.Port == 0 {
+		c.ClickHouse.Port = 8123
+	}
+	if c.ClickHouse.Database == "" {
+		c.ClickHouse.Database = "crypto"
+	}
+	if c.ClickHouse.ConnectTimeoutSec == 0 {
+		c.ClickHouse.ConnectTimeoutSec = 10
+	}
+	if c.ClickHouse.MaxRetries == 0 {
+		c.ClickHouse.MaxRetries = 3
+	}
+	if c.ClickHouse.MaxBatchSize == 0 {
+		c.ClickHouse.MaxBatchSize = 10000
+	}
+	if c.ClickHouse.ReplicationFactor == 0 {
+		c.ClickHouse.ReplicationFactor = 1
+	}
+}
+
+func applyEnvOverrides(c *Config) {
+	c.Role = envString("TRADER_ROLE", c.Role)
+
+	c.Log.Level = envString("TRADER_LOG_LEVEL", c.Log.Level)
+	c.Log.Dir = envString("TRADER_LOG_DIR", c.Log.Dir)
+	c.Log.MaxFileSizeMB = envInt("TRADER_LOG_MAX_FILE_SIZE_MB", c.Log.MaxFileSizeMB)
+	c.Log.MaxBackups = envInt("TRADER_LOG_MAX_BACKUPS", c.Log.MaxBackups)
+	c.Log.MaxAgeDays = envInt("TRADER_LOG_MAX_AGE_DAYS", c.Log.MaxAgeDays)
+	c.Log.Compress = envBool("TRADER_LOG_COMPRESS", c.Log.Compress)
+
+	c.OrderBook.DebugLogRaw = envBool("TRADER_ORDERBOOK_DEBUG_LOG_RAW", c.OrderBook.DebugLogRaw)
+	c.OrderBook.DebugLogMsg = envBool("TRADER_ORDERBOOK_DEBUG_LOG_MSG", c.OrderBook.DebugLogMsg)
+
+	c.ClickHouse.Host = envString("TRADER_CLICKHOUSE_HOST", c.ClickHouse.Host)
+	c.ClickHouse.Port = envInt("TRADER_CLICKHOUSE_PORT", c.ClickHouse.Port)
+	c.ClickHouse.Database = envString("TRADER_CLICKHOUSE_DATABASE", c.ClickHouse.Database)
+	c.ClickHouse.Username = envString("TRADER_CLICKHOUSE_USERNAME", c.ClickHouse.Username)
+	c.ClickHouse.Password = envString("TRADER_CLICKHOUSE_PASSWORD", c.ClickHouse.Password)
+	c.ClickHouse.UseTLS = envBool("TRADER_CLICKHOUSE_USE_TLS", c.ClickHouse.UseTLS)
+	c.ClickHouse.TLSSkipVerify = envBool("TRADER_CLICKHOUSE_TLS_SKIP_VERIFY", c.ClickHouse.TLSSkipVerify)
+	c.ClickHouse.ConnectTimeoutSec = envInt("TRADER_CLICKHOUSE_CONNECT_TIMEOUT_SEC", c.ClickHouse.ConnectTimeoutSec)
+	c.ClickHouse.MaxRetries = envInt("TRADER_CLICKHOUSE_MAX_RETRIES", c.ClickHouse.MaxRetries)
+}
+
+func envString(key, fallback string) string {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func envInt(key string, fallback int) int {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envBool(key string, fallback bool) bool {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }

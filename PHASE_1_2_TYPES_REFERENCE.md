@@ -211,8 +211,8 @@ MySQL TRADE_HISTORY
 | Тип | Источник | Назначение | Приватное |
 |-----|----------|-----------|----------|
 | OrderBook | WS orderbook | Хранение текущего состояния | Нет |
-| MonitoringTask | MySQL MONITORING | Monitor подписка | Нет |
-| TradingTask | MySQL TRADE | Trader подписка | Нет |
+| MonitoringTask | CTS-Core task flow | Monitor подписка | Нет |
+| TradingTask | CTS-Core task flow | Trader подписка | Нет |
 | Message | Конвертер | Унифицированный формат | Зависит от Type |
 | OrderBookData | Message | Обновление OB | Нет |
 | TradeData | Message | Анализ сделок | Нет |

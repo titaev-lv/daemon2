@@ -1,4 +1,4 @@
-cmd/daemon/ctdaemon
+cmd/trader/trader
 logs
 conf/ssl
-conf/config.ini
+conf/config.yaml

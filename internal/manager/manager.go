@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"ctdaemon/internal/logger"
+	"trader/internal/config"
+	"trader/internal/logger"
+	"trader/internal/state"
 	//"daemon2/internal/collectorevents"
-	"ctdaemon/internal/config"
-	"ctdaemon/internal/state"
 	//"daemon2/internal/exchange"
 	//"daemon2/internal/trade"
 	//"daemon2/internal/tradedata"
@@ -29,10 +29,9 @@ var (
 	ErrNotRunning = errors.New("system is not running")
 )
 
-// Manager - главный менеджер приложения
+// Manager - центральный координатор всех компонентов системы
 // Координирует работу всех компонентов и управляет их жизненным циклом
 type Manager struct {
-	// cfg - конфигурация приложения (загружается один раз при старте)
 	cfg *config.Config
 	//	tradeData    *tradedata.Monitor
 	//	exchangeExec *exchange.Monitor
