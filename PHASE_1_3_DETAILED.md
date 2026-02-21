@@ -94,7 +94,7 @@ type MonitorConfig struct {
 monitor:
     orderbook_depth: 50      # Глубокая книга
     batch_size: 1000         # Большой batch
-    batch_interval_sec: 2    # Часто отправляем
+    batch_interval: 2        # Часто отправляем
     ring_buffer_size: 50000  # Большой кэш
     save_interval: 2
 
@@ -102,7 +102,7 @@ monitor:
 monitor:
     orderbook_depth: 20      # Мелкая книга
     batch_size: 100          # Маленький batch
-    batch_interval_sec: 10   # Редко отправляем
+    batch_interval: 10       # Редко отправляем
     ring_buffer_size: 1000   # Маленький кэш
     save_interval: 10
 ```
@@ -254,7 +254,7 @@ role: monitor
 monitor:
     orderbook_depth: 50
     batch_size: 1000
-    batch_interval_sec: 3
+    batch_interval: 3
     ring_buffer_size: 30000
     save_interval: 5
 
@@ -303,7 +303,7 @@ role: both
 monitor:
     orderbook_depth: 20
     batch_size: 500
-    batch_interval_sec: 5
+    batch_interval: 5
     ring_buffer_size: 10000
     save_interval: 5
 

@@ -462,8 +462,8 @@ database:
      username: ct_system_user
      password: *****
      database: ct_system
-     max_connections: 20            # Connection pool
-     max_idle: 5
+     max_open_conns: 20             # Connection pool
+     max_idle_conns: 5
 
 role:
      type: both                     # monitor, trader, или both

@@ -53,7 +53,7 @@ cp conf/config.example.yaml conf/config.yaml
 
 Основные параметры в `conf/config.yaml`:
 ```yaml
-log:
+logging:
     level: debug             # debug, info, warn, error
     dir: ./logs
 
@@ -62,7 +62,7 @@ role: both                 # monitor, trader или both
 monitor:
     orderbook_depth: 20      # Глубина стакана: 20, 50 или 0 (full)
     batch_size: 500
-    batch_interval_sec: 5
+    batch_interval: 5
     ring_buffer_size: 10000
 
 trader:
