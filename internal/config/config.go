@@ -14,8 +14,8 @@ import (
 // Config - главная структура конфигурации приложения
 // Содержит все настройки для всех компонентов демона
 type Config struct {
-	// Log - параметры логирования
-	Log LogConfig `yaml:"log"`
+	// Logging - параметры логирования
+	Logging LogConfig `yaml:"logging"`
 	// Trade - параметры торговых операций
 	Trade TradeConfig `yaml:"trade"`
 	// OrderBook - параметры управления книгой ордеров
@@ -46,7 +46,7 @@ type LogConfig struct {
 	Dir string `yaml:"dir"`
 	// MaxFileSizeMB - максимальный размер одного лог файла в мегабайтах
 	// При достижении размера файл ротируется с добавлением timestamp
-	MaxFileSizeMB int `yaml:"max_file_size_mb"`
+	MaxFileSizeMB int `yaml:"max_size_mb"`
 	// MaxBackups - сколько файлов хранить после ротации
 	MaxBackups int `yaml:"max_backups"`
 	// MaxAgeDays - сколько дней хранить rotated логи
@@ -76,10 +76,10 @@ type MonitorConfig struct {
 	// Рекомендуется 100-1000
 	BatchSize int `yaml:"batch_size"`
 
-	// BatchIntervalSec - максимальное время в секундах между отправками batch в ClickHouse
+	// BatchInterval - максимальное время в секундах между отправками batch в ClickHouse
 	// Даже если не собрали полный BatchSize, отправим через это время
 	// Гарантирует что данные не залеживаются более чем на N секунд
-	BatchIntervalSec int `yaml:"batch_interval_sec"`
+	BatchInterval int `yaml:"batch_interval"`
 
 	// RingBufferSize - размер ring buffer для хранения исторических данных в памяти
 	// Ring buffer хранит последние N обновлений для быстрого доступа без запроса к БД
@@ -143,8 +143,8 @@ type ClickHouseConfig struct {
 	// TLSSkipVerify - пропустить проверку сертификата (небезопасно)
 	TLSSkipVerify bool `yaml:"tls_skip_verify"`
 
-	// ConnectTimeoutSec - таймаут подключения в секундах
-	ConnectTimeoutSec int `yaml:"connect_timeout_sec"`
+	// ConnectTimeout - таймаут подключения в секундах
+	ConnectTimeout int `yaml:"connect_timeout"`
 
 	// MaxRetries - максимальное количество попыток подключения
 	MaxRetries int `yaml:"max_retries"`
@@ -182,7 +182,7 @@ func Load(path string) (*Config, error) {
 
 func defaultConfig() *Config {
 	return &Config{
-		Log: LogConfig{
+		Logging: LogConfig{
 			Level:         "info",
 			Dir:           "./logs",
 			MaxFileSizeMB: 10,
@@ -197,11 +197,11 @@ func defaultConfig() *Config {
 		},
 		Role: "monitor",
 		Monitor: MonitorConfig{
-			OrderBookDepth:   20,
-			BatchSize:        500,
-			BatchIntervalSec: 5,
-			RingBufferSize:   10000,
-			SaveInterval:     5,
+			OrderBookDepth: 20,
+			BatchSize:      500,
+			BatchInterval:  5,
+			RingBufferSize: 10000,
+			SaveInterval:   5,
 		},
 		Trader: TraderConfig{
 			MaxOpenOrders:          10,
@@ -217,7 +217,7 @@ func defaultConfig() *Config {
 			Database:          "crypto",
 			UseTLS:            false,
 			TLSSkipVerify:     false,
-			ConnectTimeoutSec: 10,
+			ConnectTimeout:    10,
 			MaxRetries:        3,
 			Compression:       true,
 			MaxBatchSize:      10000,
@@ -227,20 +227,20 @@ func defaultConfig() *Config {
 }
 
 func applyDefaults(c *Config) {
-	if c.Log.Level == "" {
-		c.Log.Level = "info"
+	if c.Logging.Level == "" {
+		c.Logging.Level = "info"
 	}
-	if c.Log.Dir == "" {
-		c.Log.Dir = "./logs"
+	if c.Logging.Dir == "" {
+		c.Logging.Dir = "./logs"
 	}
-	if c.Log.MaxFileSizeMB == 0 {
-		c.Log.MaxFileSizeMB = 10
+	if c.Logging.MaxFileSizeMB == 0 {
+		c.Logging.MaxFileSizeMB = 10
 	}
-	if c.Log.MaxBackups == 0 {
-		c.Log.MaxBackups = 10
+	if c.Logging.MaxBackups == 0 {
+		c.Logging.MaxBackups = 10
 	}
-	if c.Log.MaxAgeDays == 0 {
-		c.Log.MaxAgeDays = 30
+	if c.Logging.MaxAgeDays == 0 {
+		c.Logging.MaxAgeDays = 30
 	}
 
 	if c.Trade.UpdateInterval == 0 {
@@ -257,8 +257,8 @@ func applyDefaults(c *Config) {
 	if c.Monitor.BatchSize == 0 {
 		c.Monitor.BatchSize = 500
 	}
-	if c.Monitor.BatchIntervalSec == 0 {
-		c.Monitor.BatchIntervalSec = 5
+	if c.Monitor.BatchInterval == 0 {
+		c.Monitor.BatchInterval = 5
 	}
 	if c.Monitor.RingBufferSize == 0 {
 		c.Monitor.RingBufferSize = 10000
@@ -292,8 +292,8 @@ func applyDefaults(c *Config) {
 	if c.ClickHouse.Database == "" {
 		c.ClickHouse.Database = "crypto"
 	}
-	if c.ClickHouse.ConnectTimeoutSec == 0 {
-		c.ClickHouse.ConnectTimeoutSec = 10
+	if c.ClickHouse.ConnectTimeout == 0 {
+		c.ClickHouse.ConnectTimeout = 10
 	}
 	if c.ClickHouse.MaxRetries == 0 {
 		c.ClickHouse.MaxRetries = 3
@@ -309,12 +309,12 @@ func applyDefaults(c *Config) {
 func applyEnvOverrides(c *Config) {
 	c.Role = envString("TRADER_ROLE", c.Role)
 
-	c.Log.Level = envString("TRADER_LOG_LEVEL", c.Log.Level)
-	c.Log.Dir = envString("TRADER_LOG_DIR", c.Log.Dir)
-	c.Log.MaxFileSizeMB = envInt("TRADER_LOG_MAX_FILE_SIZE_MB", c.Log.MaxFileSizeMB)
-	c.Log.MaxBackups = envInt("TRADER_LOG_MAX_BACKUPS", c.Log.MaxBackups)
-	c.Log.MaxAgeDays = envInt("TRADER_LOG_MAX_AGE_DAYS", c.Log.MaxAgeDays)
-	c.Log.Compress = envBool("TRADER_LOG_COMPRESS", c.Log.Compress)
+	c.Logging.Level = envString("TRADER_LOG_LEVEL", c.Logging.Level)
+	c.Logging.Dir = envString("TRADER_LOG_DIR", c.Logging.Dir)
+	c.Logging.MaxFileSizeMB = envInt("TRADER_LOG_MAX_SIZE_MB", c.Logging.MaxFileSizeMB)
+	c.Logging.MaxBackups = envInt("TRADER_LOG_MAX_BACKUPS", c.Logging.MaxBackups)
+	c.Logging.MaxAgeDays = envInt("TRADER_LOG_MAX_AGE_DAYS", c.Logging.MaxAgeDays)
+	c.Logging.Compress = envBool("TRADER_LOG_COMPRESS", c.Logging.Compress)
 
 	c.OrderBook.DebugLogRaw = envBool("TRADER_ORDERBOOK_DEBUG_LOG_RAW", c.OrderBook.DebugLogRaw)
 	c.OrderBook.DebugLogMsg = envBool("TRADER_ORDERBOOK_DEBUG_LOG_MSG", c.OrderBook.DebugLogMsg)
@@ -326,7 +326,7 @@ func applyEnvOverrides(c *Config) {
 	c.ClickHouse.Password = envString("TRADER_CLICKHOUSE_PASSWORD", c.ClickHouse.Password)
 	c.ClickHouse.UseTLS = envBool("TRADER_CLICKHOUSE_USE_TLS", c.ClickHouse.UseTLS)
 	c.ClickHouse.TLSSkipVerify = envBool("TRADER_CLICKHOUSE_TLS_SKIP_VERIFY", c.ClickHouse.TLSSkipVerify)
-	c.ClickHouse.ConnectTimeoutSec = envInt("TRADER_CLICKHOUSE_CONNECT_TIMEOUT_SEC", c.ClickHouse.ConnectTimeoutSec)
+	c.ClickHouse.ConnectTimeout = envInt("TRADER_CLICKHOUSE_CONNECT_TIMEOUT", c.ClickHouse.ConnectTimeout)
 	c.ClickHouse.MaxRetries = envInt("TRADER_CLICKHOUSE_MAX_RETRIES", c.ClickHouse.MaxRetries)
 }
 

@@ -51,12 +51,12 @@ func main() {
 	// Создает логи в папке (по умолчанию ./logs) и ротирует файлы по размеру
 	// Поддерживает разные уровни: debug, info, warn, error
 	if err := logger.Init(
-		cfg.Log.Level,
-		cfg.Log.Dir,
-		cfg.Log.MaxFileSizeMB,
-		cfg.Log.MaxBackups,
-		cfg.Log.MaxAgeDays,
-		cfg.Log.Compress,
+		cfg.Logging.Level,
+		cfg.Logging.Dir,
+		cfg.Logging.MaxFileSizeMB,
+		cfg.Logging.MaxBackups,
+		cfg.Logging.MaxAgeDays,
+		cfg.Logging.Compress,
 	); err != nil {
 		fmt.Printf("Failed to init logger: %+v\n", err)
 		os.Exit(1)

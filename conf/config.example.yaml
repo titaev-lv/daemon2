@@ -1,7 +1,7 @@
-log:
+logging:
   level: info
   dir: ./logs
-  max_file_size_mb: 100
+  max_size_mb: 100
   max_backups: 10
   max_age_days: 30
   compress: false
@@ -11,7 +11,7 @@ role: both
 monitor:
   orderbook_depth: 20
   batch_size: 500
-  batch_interval_sec: 5
+  batch_interval: 5
   ring_buffer_size: 10000
   save_interval: 5
 
@@ -37,7 +37,7 @@ clickhouse:
   username: default
   password: default
   use_tls: false
-  connect_timeout_sec: 10
+  connect_timeout: 10
   max_retries: 3
   compression: true
   max_batch_size: 10000
